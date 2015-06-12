@@ -13,8 +13,8 @@
 #include <af/data.h>
 #include <testHelpers.hpp>
 
-using namespace std;
 using namespace af;
+using std::vector;
 
 template<typename T>
 class Constant : public ::testing::Test { };
@@ -55,7 +55,7 @@ void ConstantCCheck(T value) {
     af_get_data_ptr(&h_in.front(), out);
 
     for (int i = 0; i < num; i++) {
-        ASSERT_EQ(h_in[i], val);
+        ASSERT_EQ(::real(h_in[i]), val);
     }
 }
 

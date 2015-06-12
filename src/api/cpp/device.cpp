@@ -21,7 +21,11 @@ namespace af
 
     void deviceprop(char* d_name, char* d_platform, char *d_toolkit, char* d_compute)
     {
-        AF_THROW(af_deviceprop(d_name, d_platform, d_toolkit, d_compute));
+        deviceInfo(d_name, d_platform, d_toolkit, d_compute);
+    }
+    void deviceInfo(char* d_name, char* d_platform, char *d_toolkit, char* d_compute)
+    {
+        AF_THROW(af_device_info(d_name, d_platform, d_toolkit, d_compute));
     }
 
     int getDeviceCount()
@@ -118,6 +122,18 @@ namespace af
                                     lock_bytes,  lock_buffers));
     }
 
+    void setMemStepSize(const size_t step_bytes)
+    {
+        AF_THROW(af_set_mem_step_size(step_bytes));
+    }
+
+    size_t getMemStepSize()
+    {
+        size_t size_bytes = 0;
+        AF_THROW(af_get_mem_step_size(&size_bytes));
+        return size_bytes;
+    }
+
 #define INSTANTIATE(T)                                                  \
     template<> AFAPI                                                    \
     T* alloc(const size_t elements)                                     \
@@ -138,4 +154,5 @@ namespace af
     INSTANTIATE(unsigned)
     INSTANTIATE(unsigned char)
     INSTANTIATE(char)
+
 }

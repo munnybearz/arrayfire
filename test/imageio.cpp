@@ -65,7 +65,7 @@ void loadImageTest(string pTestFile, string pImageFile, const bool isColor)
     // Delete
     delete[] imgData;
 
-    if(imgArray != 0) af_destroy_array(imgArray);
+    if(imgArray != 0) af_release_array(imgArray);
 }
 
 TYPED_TEST(ImageIO, ColorSmall)
@@ -94,7 +94,7 @@ void loadimageArgsTest(string pImageFile, const bool isColor, af_err err)
 
     ASSERT_EQ(err, af_load_image(&imgArray, pImageFile.c_str(), isColor));
 
-    if(imgArray != 0) af_destroy_array(imgArray);
+    if(imgArray != 0) af_release_array(imgArray);
 }
 
 TYPED_TEST(ImageIO,InvalidArgsMissingFile)
@@ -148,7 +148,7 @@ TEST(ImageIO, SavePNGCPP) {
     saveImage("SaveCPP.png", input);
     af::array out = af::loadImage("SaveCPP.png", true);
 
-    ASSERT_FALSE(af::anytrue<bool>(out - input));
+    ASSERT_FALSE(af::anyTrue<bool>(out - input));
 }
 
 TEST(ImageIO, SaveBMPCPP) {
@@ -164,7 +164,7 @@ TEST(ImageIO, SaveBMPCPP) {
     saveImage("SaveCPP.bmp", input);
     af::array out = af::loadImage("SaveCPP.bmp", true);
 
-    ASSERT_FALSE(af::anytrue<bool>(out - input));
+    ASSERT_FALSE(af::anyTrue<bool>(out - input));
 }
 
 #endif // WITH_FREEIMAGE

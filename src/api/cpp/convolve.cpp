@@ -8,6 +8,7 @@
  ********************************************************/
 
 #include <af/signal.h>
+#include <af/compatible.h>
 #include <af/array.h>
 #include "error.hpp"
 #include <algorithm>
@@ -28,7 +29,7 @@ array convolve(const array& signal, const array& filter, const convMode mode, co
     }
 }
 
-array convolve(const array& col_filter, const array& row_filter, const array& signal, const convMode mode, convDomain domain)
+array convolve(const array& col_filter, const array& row_filter, const array& signal, const convMode mode)
 {
     af_array out = 0;
     AF_THROW(af_convolve2_sep(&out, col_filter.get(), row_filter.get(), signal.get(), mode));
@@ -54,6 +55,11 @@ array convolve3(const array& signal, const array& filter, const convMode mode, c
     af_array out = 0;
     AF_THROW(af_convolve3(&out, signal.get(), filter.get(), mode, domain));
     return array(out);
+}
+
+array filter(const array& image, const array& kernel)
+{
+    return convolve(image, kernel, AF_CONV_DEFAULT, AF_CONV_AUTO);
 }
 
 }

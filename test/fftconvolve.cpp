@@ -42,10 +42,6 @@ typedef ::testing::Types<float, double> TestTypesLarge;
 TYPED_TEST_CASE(FFTConvolve, TestTypes);
 TYPED_TEST_CASE(FFTConvolveLarge, TestTypesLarge);
 
-static double get_real(double val) { return val; }
-static double get_real(cfloat val) { return std::real(val); }
-static double get_real(cdouble val) { return std::real(val); }
-
 template<typename T, int baseDim>
 void fftconvolveTest(string pTestFile, bool expand)
 {
@@ -73,9 +69,9 @@ void fftconvolveTest(string pTestFile, bool expand)
 
     af_conv_mode mode = expand ? AF_CONV_EXPAND : AF_CONV_DEFAULT;
     switch(baseDim) {
-        case 1: ASSERT_EQ(AF_SUCCESS, af_fftconvolve1(&outArray, signal, filter, mode)); break;
-        case 2: ASSERT_EQ(AF_SUCCESS, af_fftconvolve2(&outArray, signal, filter, mode)); break;
-        case 3: ASSERT_EQ(AF_SUCCESS, af_fftconvolve3(&outArray, signal, filter, mode)); break;
+        case 1: ASSERT_EQ(AF_SUCCESS, af_fft_convolve1(&outArray, signal, filter, mode)); break;
+        case 2: ASSERT_EQ(AF_SUCCESS, af_fft_convolve2(&outArray, signal, filter, mode)); break;
+        case 3: ASSERT_EQ(AF_SUCCESS, af_fft_convolve3(&outArray, signal, filter, mode)); break;
     }
 
     vector<T> currGoldBar = tests[0];
@@ -91,15 +87,15 @@ void fftconvolveTest(string pTestFile, bool expand)
 
     for (size_t elIter=0; elIter<nElems; ++elIter) {
         ASSERT_NEAR(
-            get_real(currGoldBar[elIter]),
-            get_real(outData[elIter])
+            real(currGoldBar[elIter]),
+            real(outData[elIter])
             , 1e-2)<< "at: " << elIter<< std::endl;
     }
 
     delete[] outData;
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(outArray));
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(signal));
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(filter));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(outArray));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(signal));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(filter));
 }
 
 template<typename T, int baseDim>
@@ -136,7 +132,7 @@ void fftconvolveTestLarge(int sDim, int fDim, int sBatch, int fBatch, bool expan
     array signal = randu(signalDims, (af_dtype) af::dtype_traits<T>::af_type);
     array filter = randu(filterDims, (af_dtype) af::dtype_traits<T>::af_type);
 
-    array out = fftconvolve(signal, filter, expand ? AF_CONV_EXPAND : AF_CONV_DEFAULT);
+    array out = fftConvolve(signal, filter, expand ? AF_CONV_EXPAND : AF_CONV_DEFAULT);
 
     array gold;
     switch(baseDim) {
@@ -393,7 +389,7 @@ TEST(FFTConvolve1, CPP)
     af::array filter(numDims[1], &(in[1].front()));
     //filter dims = [4 1 1 1]
 
-    af::array output = fftconvolve1(signal, filter, AF_CONV_EXPAND);
+    af::array output = fftConvolve1(signal, filter, AF_CONV_EXPAND);
     //output dims = [32 1 1 1] - same as input since expand(3rd argument is false)
     //None of the dimensions > 1 has lenght > 1, so no batch mode is activated.
     //![ex_image_convolve1]
@@ -430,7 +426,7 @@ TEST(FFTConvolve2, CPP)
     af::array filter(numDims[1], &(in[1].front()));
     //filter dims = [5 5 2 1]
 
-    af::array output = fftconvolve2(signal, filter, AF_CONV_EXPAND);
+    af::array output = fftConvolve2(signal, filter, AF_CONV_EXPAND);
     //output dims = [15 17 1 1] - same as input since expand(3rd argument is false)
     //however, notice that the 3rd dimension of filter is > 1.
     //So, one to many batch mode will be activated automatically
@@ -470,7 +466,7 @@ TEST(FFTConvolve3, CPP)
     af::array filter(numDims[1], &(in[1].front()));
     //filter dims = [4 2 3 2]
 
-    af::array output = fftconvolve3(signal, filter, AF_CONV_EXPAND);
+    af::array output = fftConvolve3(signal, filter, AF_CONV_EXPAND);
     //output dims = [10 11 2 2] - same as input since expand(3rd argument is false)
     //however, notice that the 4th dimension is > 1 for both signal
     //and the filter, therefore many to many batch mode will be
@@ -526,7 +522,7 @@ TEST(FFTConvolve, Docs_Unified_Wrapper)
     //e [2 2 1 1]
     //     1.0000     1.0000
     //     1.0000     1.0000
-    array f = fftconvolve(d, e);
+    array f = fftConvolve(d, e);
     //af_print(f);
     //f [5 5 1 1]
     //     2.0000     2.0000     2.0000     2.0000     1.0000
@@ -568,7 +564,7 @@ TEST(FFTConvolve, Docs_Unified_Wrapper)
     //    0.5000     0.5000
     //    0.5000     0.5000
 
-    array i = fftconvolve(g, h);
+    array i = fftConvolve(g, h);
     //af_print(i);
     //i [4 4 4 1]
     //    4.0000     4.0000     4.0000     2.0000
@@ -591,4 +587,67 @@ TEST(FFTConvolve, Docs_Unified_Wrapper)
     //    2.0000     2.0000     2.0000     1.0000
     //    1.0000     1.0000     1.0000     0.5000
     //![ex_image_convolve_3d]
+}
+using namespace af;
+
+TEST(GFOR, fftConvolve2_MO)
+{
+    array A = randu(5, 5, 3);
+    array B = randu(5, 5, 3);
+    array K = randu(3, 3);
+
+    gfor(seq ii, 3) {
+        B(span, span, ii) = fftConvolve2(A(span, span, ii), K);
+    }
+
+    for (int ii = 0; ii < 3; ii++) {
+        array c_ii = fftConvolve2(A(span, span, ii), K);
+        array b_ii = B(span, span, ii);
+        ASSERT_EQ(max<double>(abs(c_ii - b_ii)) < 1E-5, true);
+    }
+}
+
+TEST(GFOR, fftConvolve2_OM)
+{
+    array A = randu(5, 5);
+    array B = randu(5, 5, 3);
+    array K = randu(3, 3, 3);
+
+    gfor(seq ii, 3) {
+        B(span, span, ii) = fftConvolve2(A, K(span, span, ii));
+    }
+
+    for (int ii = 0; ii < 3; ii++) {
+        array c_ii = fftConvolve2(A, K(span, span, ii));
+        array b_ii = B(span, span, ii);
+        ASSERT_EQ(max<double>(abs(c_ii - b_ii)) < 1E-5, true);
+    }
+}
+
+TEST(GFOR, fftConvolve2_MM)
+{
+    array A = randu(5, 5, 3);
+    array B = randu(5, 5, 3);
+    array K = randu(3, 3, 3);
+
+    gfor(seq ii, 3) {
+        B(span, span, ii) = fftConvolve2(A(span, span, ii), K(span, span, ii));
+    }
+
+    for (int ii = 0; ii < 3; ii++) {
+        array c_ii = fftConvolve2(A(span, span, ii), K(span, span, ii));
+        array b_ii = B(span, span, ii);
+        ASSERT_EQ(max<double>(abs(c_ii - b_ii)) < 1E-5, true);
+    }
+}
+
+TEST(Padding, fftConvolve2)
+{
+    for (int n = 5; n < 32; n++) {
+        array a = randu(n, n);
+        array b = randu(5, 5);
+        array c = fftConvolve2(a, b);
+        array d = convolve2(a, b, AF_CONV_DEFAULT, AF_CONV_SPATIAL);
+        ASSERT_EQ(max<double>(abs(c - d)) < 1E-5, true);
+    }
 }

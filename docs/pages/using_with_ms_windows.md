@@ -1,6 +1,26 @@
 Using ArrayFire with Microsoft Windows and Visual Studio {#using_on_windows}
 =====
 
+## Pre-requisites
+
+Before you get started, make sure you have the necessary pre-requisites.
+
+- If you are using CUDA, please make sure you have [CUDA 7](https://developer.nvidia.com/cuda-downloads) installed on your system.
+     - [Contact us](support@arrayfire.com) for custom builds (eg. different toolkits)
+
+- If you are using OpenCL, please make sure you have one of the following SDKs.
+     - [AMD OpenCL SDK](http://developer.amd.com/tools-and-sdks/opencl-zone/amd-accelerated-parallel-processing-app-sdk/)
+     - [Intel OpenCL SDK](https://software.intel.com/en-us/articles/download-the-latest-intel-amt-software-development-kit-sdk)
+     - [NVIDIA CUDA](https://developer.nvidia.com/cuda-downloads)
+
+## Step 0: Running pre-built executables
+
+The ArrayFire installer ships with a few pre-built executables with the examples.
+These should run out of the box.
+
+Note: For the CUDA executables, you will need to copy CUDA_PATH\nvvm\bin\nvvm64_30_0.dll
+to the location of the executables.
+
 ## Step 1: Adding ArrayFire to PATH for all users
 
 The ArrayFire installer for Windows creates a user `PATH` variable containing
@@ -87,4 +107,3 @@ different:
 Please note that this method will not work with the ArrayFire examples as
 our implementations are built with the Visual Studio CL compiler rather than
 NVCC to ensure they are supported across various platforms.
-

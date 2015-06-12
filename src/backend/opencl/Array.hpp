@@ -8,17 +8,17 @@
  ********************************************************/
 
 #pragma once
+#include <platform.hpp>
 #include <af/array.h>
 #include <af/dim4.hpp>
 #include <ArrayInfo.hpp>
-#include <cl.hpp>
-#include <platform.hpp>
 #include <traits.hpp>
 #include <backend.hpp>
 #include <types.hpp>
 #include <traits.hpp>
 #include <Param.hpp>
 #include <JIT/Node.hpp>
+#include <memory.hpp>
 #include <memory>
 
 namespace opencl
@@ -78,6 +78,7 @@ namespace opencl
     template<typename T>
     void *getDevicePtr(const Array<T>& arr)
     {
+        memUnlink((T *)arr.get());
         return (void *)((*arr.get())());
     }
 

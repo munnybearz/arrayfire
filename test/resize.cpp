@@ -53,8 +53,8 @@ class ResizeI : public ::testing::Test
 };
 
 // create a list of types to be tested
-typedef ::testing::Types<float, double> TestTypesF;
-typedef ::testing::Types<int, unsigned, unsigned char, char> TestTypesI;
+typedef ::testing::Types<float, double, cfloat, cdouble> TestTypesF;
+typedef ::testing::Types<int, unsigned, intl, uintl, unsigned char, char> TestTypesI;
 
 // register the type list
 TYPED_TEST_CASE(Resize, TestTypesF);
@@ -74,24 +74,39 @@ TYPED_TEST(Resize, InvalidDims)
     ASSERT_EQ(AF_SUCCESS, af_create_array(&inArray, &in.front(), dims.ndims(), dims.get(),
                                           (af_dtype) af::dtype_traits<TypeParam>::af_type));
     ASSERT_EQ(AF_ERR_SIZE, af_resize(&outArray, inArray, 0, 0, AF_INTERP_NEAREST));
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(inArray));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(inArray));
 }
 
-TYPED_TEST(Resize, InvalidType)
+template<typename T>
+void compare(T test, T out, double err, size_t i)
 {
-    if (noDoubleTests<TypeParam>()) return;
+    ASSERT_EQ(abs(test - out) < 0.0001, true) << "at: " << i << std::endl
+             << "for test = : " << test << std::endl
+             << "out data = : " << out << std::endl;
+}
 
-    vector<TypeParam> in(16,8);
+template<>
+void compare<uintl>(uintl test, uintl out, double err, size_t i)
+{
+    ASSERT_EQ(((intl)test - (intl)out) < 0.0001, true) << "at: " << i << std::endl
+             << "for test = : " << test << std::endl
+             << "out data = : " << out << std::endl;
+}
 
-    af_array inArray  = 0;
-    af_array outArray = 0;
+template<>
+void compare<uint>(uint test, uint out, double err, size_t i)
+{
+    ASSERT_EQ(((int)test - (int)out) < 0.0001, true) << "at: " << i << std::endl
+             << "for test = : " << test << std::endl
+             << "out data = : " << out << std::endl;
+}
 
-    af::dim4 dims = af::dim4(8,8,1,1);
-
-    ASSERT_EQ(AF_SUCCESS, af_create_array(&inArray, &in.front(), dims.ndims(), dims.get(),
-                                          (af_dtype) af::dtype_traits<cfloat>::af_type));
-    ASSERT_EQ(AF_ERR_INVALID_TYPE, af_resize(&outArray, inArray, 16, 16, AF_INTERP_NEAREST));
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(inArray));
+template<>
+void compare<uchar>(uchar test, uchar out, double err, size_t i)
+{
+    ASSERT_EQ(((int)test - (int)out) < 0.0001, true) << "at: " << i << std::endl
+             << "for test = : " << test << std::endl
+             << "out data = : " << out << std::endl;
 }
 
 template<typename T>
@@ -128,17 +143,20 @@ void resizeTest(string pTestFile, const unsigned resultIdx, const dim_t odim0, c
     // Compare result
     size_t nElems = tests[resultIdx].size();
     for (size_t elIter = 0; elIter < nElems; ++elIter) {
-        ASSERT_NEAR(tests[resultIdx][elIter], outData[elIter], 0.0001) << "at: " << elIter << std::endl;
+        compare<T>(tests[resultIdx][elIter], outData[elIter], 0.0001, elIter);
     }
 
     // Delete
     delete[] outData;
 
-    if(inArray   != 0) af_destroy_array(inArray);
-    if(outArray  != 0) af_destroy_array(outArray);
-    if(tempArray != 0) af_destroy_array(tempArray);
+    if(inArray   != 0) af_release_array(inArray);
+    if(outArray  != 0) af_release_array(outArray);
+    if(tempArray != 0) af_release_array(tempArray);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Float Types
+///////////////////////////////////////////////////////////////////////////////
 TYPED_TEST(Resize, Resize3CSquareUpNearest)
 {
     resizeTest<TypeParam>(string(TEST_DIR"/resize/square.test"), 0, 16, 16, AF_INTERP_NEAREST);
@@ -203,6 +221,9 @@ TYPED_TEST(Resize, Resize1CRectangleDownLinear)
     resizeTest<TypeParam>(string(TEST_DIR"/resize/rectangle.test"), 3, 6, 2, AF_INTERP_BILINEAR);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Interger Types
+///////////////////////////////////////////////////////////////////////////////
 TYPED_TEST(ResizeI, Resize3CSquareUpNearest)
 {
     resizeTest<TypeParam>(string(TEST_DIR"/resize/square.test"), 0, 16, 16, AF_INTERP_NEAREST);
@@ -247,6 +268,9 @@ TYPED_TEST(ResizeI, Resize3CSquareDownLinearSubref)
                           true, &(this->subMat1));
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Float Types
+///////////////////////////////////////////////////////////////////////////////
 TYPED_TEST(Resize, Resize1CLargeUpNearest)
 {
     resizeTest<TypeParam>(string(TEST_DIR"/resize/large.test"), 0, 256, 256, AF_INTERP_NEAREST);
@@ -267,6 +291,9 @@ TYPED_TEST(Resize, Resize1CLargeDownLinear)
     resizeTest<TypeParam>(string(TEST_DIR"/resize/large.test"), 3, 32, 32, AF_INTERP_BILINEAR);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Integer Types
+///////////////////////////////////////////////////////////////////////////////
 TYPED_TEST(ResizeI, Resize1CLargeUpNearest)
 {
     resizeTest<TypeParam>(string(TEST_DIR"/resize/large.test"), 0, 256, 256, AF_INTERP_NEAREST);
@@ -305,8 +332,8 @@ void resizeArgsTest(af_err err, string pTestFile, const af::dim4 odims, const af
 
     ASSERT_EQ(err, af_resize(&outArray, inArray, odims[0], odims[1], method));
 
-    if(inArray != 0) af_destroy_array(inArray);
-    if(outArray != 0) af_destroy_array(outArray);
+    if(inArray != 0) af_release_array(inArray);
+    if(outArray != 0) af_release_array(outArray);
 }
 
 TYPED_TEST(Resize,InvalidArgsDims0)
@@ -405,4 +432,24 @@ TEST(ResizeScale2, CPP)
 
     // Delete
     delete[] outData;
+}
+
+
+
+TEST(Resize, ExtractGFOR)
+{
+    using namespace af;
+    dim4 dims = dim4(100, 100, 3);
+    array A = round(100 * randu(dims));
+    array B = constant(0, 200, 200, 3);
+
+    gfor(seq ii, 3) {
+        B(span, span, ii) = resize(A(span, span, ii), 200, 200);
+    }
+
+    for(int ii = 0; ii < 3; ii++) {
+        array c_ii = resize(A(span, span, ii), 200, 200);
+        array b_ii = B(span, span, ii);
+        ASSERT_EQ(max<double>(abs(c_ii - b_ii)) < 1E-5, true);
+    }
 }

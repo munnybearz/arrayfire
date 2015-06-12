@@ -32,7 +32,7 @@ namespace af
     static af_array gforReorder(const af_array in, unsigned dim)
     {
         // This is here to stop gcc from complaining
-        if (dim > 3) AF_THROW_MSG("Invalid dimension", AF_ERR_INTERNAL);
+        if (dim > 3) THROW(AF_ERR_SIZE);
         unsigned order[AF_MAX_DIMS] = {0, 1, 2, dim};
         order[dim] = 3;
         af_array out;
@@ -67,7 +67,7 @@ namespace af
             }
             return odims;
         } catch(std::logic_error &err) {
-            AF_THROW_MSG(err.what(), AF_ERR_INTERNAL);
+            AF_THROW_MSG(err.what(), AF_ERR_SIZE);
         }
     }
 
@@ -102,6 +102,20 @@ namespace af
         return dim4(d0, d1, d2, d3);
     }
 
+    struct array::array_proxy::array_proxy_impl
+    {
+        array       *parent;        // The original array
+        af_index_t  indices[4];     // Indexing array or seq objects
+        bool        lin;
+        array_proxy_impl(array &parent, af_index_t *idx, bool linear)
+            : parent(&parent)
+            , indices()
+            , lin(linear)
+        {
+            std::copy(idx, idx + AF_MAX_DIMS, indices);
+        }
+    };
+
     array::array(const af_array handle): arr(handle)
     {
     }
@@ -114,7 +128,7 @@ namespace af
     }
 
     template<typename T>
-    static void initDataArray(af_array *arr, const T *ptr, af_source_t src,
+    static void initDataArray(af_array *arr, const T *ptr, af::source src,
                               dim_t d0, dim_t d1=1, dim_t d2=1, dim_t d3=1)
     {
         af::dtype ty = (af::dtype)dtype_traits<T>::af_type;
@@ -123,7 +137,7 @@ namespace af
         case afHost:   AF_THROW(af_create_array(arr, (const void * const)ptr, AF_MAX_DIMS, my_dims, ty)); break;
         case afDevice: AF_THROW(af_device_array(arr, (const void *      )ptr, AF_MAX_DIMS, my_dims, ty)); break;
         default: AF_THROW_MSG("Can not create array from the requested source pointer",
-                              AF_ERR_INVALID_ARG);
+                              AF_ERR_ARG);
         }
     }
 
@@ -161,33 +175,34 @@ namespace af
 
 #define INSTANTIATE(T)                                                  \
     template<> AFAPI                                                    \
-    array::array(const dim4 &dims, const T *ptr, af_source_t src, dim_t ngfor) \
+    array::array(const dim4 &dims, const T *ptr, af::source src)        \
         : arr(0)                                                        \
     {                                                                   \
-        initDataArray<T>(&arr, ptr, src, dims[0], dims[1], dims[2], dims[3]); \
+        initDataArray<T>(&arr, ptr, src, dims[0], dims[1], dims[2],     \
+                dims[3]);                                               \
     }                                                                   \
     template<> AFAPI                                                    \
-    array::array(dim_t d0, const T *ptr, af_source_t src, dim_t ngfor) \
+    array::array(dim_t d0, const T *ptr, af::source src) \
         : arr(0)                                                        \
     {                                                                   \
         initDataArray<T>(&arr, ptr, src, d0);                           \
     }                                                                   \
     template<> AFAPI                                                    \
-    array::array(dim_t d0, dim_t d1, const T *ptr, af_source_t src, \
-                 dim_t ngfor) : arr(0)                               \
+    array::array(dim_t d0, dim_t d1, const T *ptr, af::source src)      \
+        : arr(0)                                                        \
     {                                                                   \
         initDataArray<T>(&arr, ptr, src, d0, d1);                       \
     }                                                                   \
     template<> AFAPI                                                    \
-    array::array(dim_t d0, dim_t d1, dim_t d2, const T *ptr,   \
-                 af_source_t src, dim_t ngfor) :                     \
-        arr(0)                                                          \
+    array::array(dim_t d0, dim_t d1, dim_t d2, const T *ptr,            \
+                 af::source src)                                        \
+        : arr(0)                                                        \
     {                                                                   \
         initDataArray<T>(&arr, ptr, src, d0, d1, d2);                   \
     }                                                                   \
     template<> AFAPI                                                    \
-    array::array(dim_t d0, dim_t d1, dim_t d2, dim_t d3, const T *ptr, \
-                 af_source_t src, dim_t ngfor) :                     \
+    array::array(dim_t d0, dim_t d1, dim_t d2, dim_t d3, const T *ptr,  \
+                 af::source src) :                                      \
         arr(0)                                                          \
                                                                         \
     {                                                                   \
@@ -211,7 +226,7 @@ namespace af
     {
         af_array tmp = get();
         // THOU SHALL NOT THROW IN DESTRUCTORS
-        af_destroy_array(tmp);
+        af_release_array(tmp);
     }
 
     af::dtype array::type() const
@@ -297,8 +312,7 @@ namespace af
 
 #undef INSTANTIATE
 
-    template<typename Idx1, typename Idx2, typename Idx3, typename Idx4>
-    static array::array_proxy gen_indexing(const array &ref, const Idx1 &s0, const Idx2 &s1, const Idx3 &s2, const Idx4 &s3)
+    static array::array_proxy gen_indexing(const array &ref, const index &s0, const index &s1, const index &s2, const index &s3, bool linear = false)
     {
         ref.eval();
         af_index_t inds[AF_MAX_DIMS];
@@ -307,13 +321,34 @@ namespace af
         inds[2] = s2.get();
         inds[3] = s3.get();
 
-        return array::array_proxy(const_cast<array&>(ref), inds);
+        return array::array_proxy(const_cast<array&>(ref), inds, linear);
     }
 
+    array::array_proxy array::operator()(const index &s0)
+    {
+        return const_cast<const array*>(this)->operator()(s0);
+    }
 
     array::array_proxy array::operator()(const index &s0, const index &s1, const index &s2, const index &s3)
     {
         return const_cast<const array*>(this)->operator()(s0, s1, s2, s3);
+    }
+
+    const array::array_proxy array::operator()(const index &s0) const
+    {
+        index z = index(0);
+        if(isvector()){
+            switch(numDims(this->arr)) {
+                case 1: return gen_indexing(*this, s0, z, z, z);
+                case 2: return gen_indexing(*this, z, s0, z, z);
+                case 3: return gen_indexing(*this, z, z, s0, z);
+                case 4: return gen_indexing(*this, z, z, z, s0);
+                default: THROW(AF_ERR_SIZE);
+            }
+        }
+        else {
+            return gen_indexing(*this, s0, z, z, z, true);
+        }
     }
 
     const array::array_proxy array::operator()(const index &s0, const index &s1, const index &s2, const index &s3) const
@@ -328,7 +363,7 @@ namespace af
             case 2: return gen_indexing(*this, s1, s0, s2, s3);
             case 3: return gen_indexing(*this, s1, s2, s0, s3);
             case 4: return gen_indexing(*this, s1, s2, s3, s0);
-            default: AF_THROW_MSG("ArrayFire internal error", AF_ERR_INTERNAL);
+            default: THROW(AF_ERR_SIZE);
             }
         }
         else {
@@ -337,43 +372,73 @@ namespace af
 
     }
 
-    array::array_proxy array::row(int index) const
+    const array::array_proxy array::row(int index) const
     {
         seq idx(index, index, 1);
         return this->operator()(idx, span, span, span);
     }
 
-    array::array_proxy array::col(int index) const
+    array::array_proxy array::row(int index)
+    {
+        return const_cast<const array*>(this)->row(index);
+    }
+
+    const array::array_proxy array::col(int index) const
     {
         seq idx(index, index, 1);
         return this->operator()(span, idx, span, span);
     }
 
-    array::array_proxy array::slice(int index) const
+    array::array_proxy array::col(int index)
+    {
+        return const_cast<const array*>(this)->col(index);
+    }
+
+    const array::array_proxy array::slice(int index) const
     {
         seq idx(index, index, 1);
         return this->operator()(span, span, idx, span);
     }
 
-    array::array_proxy array::rows(int first, int last) const
+    array::array_proxy array::slice(int index)
+    {
+        return const_cast<const array*>(this)->slice(index);
+    }
+
+    const array::array_proxy array::rows(int first, int last) const
     {
         seq idx(first, last, 1);
         return this->operator()(idx, span, span, span);
     }
 
-    array::array_proxy array::cols(int first, int last) const
+    array::array_proxy array::rows(int first, int last)
+    {
+        return const_cast<const array*>(this)->rows(first, last);
+    }
+
+    const array::array_proxy array::cols(int first, int last) const
     {
         seq idx(first, last, 1);
         return this->operator()(span, idx, span, span);
     }
 
-    array::array_proxy array::slices(int first, int last) const
+    array::array_proxy array::cols(int first, int last)
+    {
+        return const_cast<const array*>(this)->cols(first, last);
+    }
+
+    const array::array_proxy array::slices(int first, int last) const
     {
         seq idx(first, last, 1);
         return this->operator()(span, span, idx, span);
     }
 
-    array array::as(af::dtype type) const
+    array::array_proxy array::slices(int first, int last)
+    {
+        return const_cast<const array*>(this)->slices(first, last);
+    }
+
+    const array array::as(af::dtype type) const
     {
         af_array out;
         AF_THROW(af_cast(&out, this->get(), type));
@@ -382,7 +447,19 @@ namespace af
 
     array::array(const array& in) : arr(0)
     {
-        AF_THROW(af_weak_copy(&arr, in.get()));
+        AF_THROW(af_retain_array(&arr, in.get()));
+    }
+
+    array::array(const array& input, const dim4& dims) : arr(0)
+    {
+        AF_THROW(af_moddims(&arr, input.get(), AF_MAX_DIMS, dims.get()));
+    }
+
+    array::array(const array& input, const dim_t dim0, const dim_t dim1, const dim_t dim2, const dim_t dim3)
+        : arr(0)
+    {
+        dim_t dims[] = {dim0, dim1, dim2, dim3};
+        AF_THROW(af_moddims(&arr, input.get(), AF_MAX_DIMS, dims));
     }
 
     // Transpose and Conjugate Transpose
@@ -398,17 +475,18 @@ namespace af
 
     void array::set(af_array tmp)
     {
-        if (arr) AF_THROW(af_destroy_array(arr));
+        if (arr) AF_THROW(af_release_array(arr));
         arr = tmp;
     }
 
+    // Assign values to an array
     array::array_proxy&
     af::array::array_proxy::operator=(const array &other)
     {
-        unsigned nd = numDims(parent->get());
-        const dim4 this_dims = getDims(parent->get());
+        unsigned nd = numDims(impl->parent->get());
+        const dim4 this_dims = getDims(impl->parent->get());
         const dim4 other_dims = other.dims();
-        int dim = gforDim(indices);
+        int dim = gforDim(impl->indices);
         af_array other_arr = other.get();
 
         bool batch_assign = false;
@@ -416,13 +494,13 @@ namespace af
         if (dim >= 0) {
             batch_assign = true;
             for (int i = 0; i < AF_MAX_DIMS; i++) {
-                if (this->indices[i].isBatch) batch_assign &= (other_dims[i] == 1);
+                if (this->impl->indices[i].isBatch) batch_assign &= (other_dims[i] == 1);
                 else                          batch_assign &= (other_dims[i] == this_dims[i]);
             }
 
             if (batch_assign) {
                 //FIXME: Figure out a faster, cleaner way to do this
-                dim4 out_dims = seqToDims(this->indices, this_dims, false);
+                dim4 out_dims = seqToDims(impl->indices, this_dims, false);
                 af_array out;
                 AF_THROW(af_tile(&out, other_arr,
                                  out_dims[0] / other_dims[0],
@@ -439,12 +517,31 @@ namespace af
             }
         }
 
+        af_array par_arr = 0;
+
+        if (impl->lin) {
+            AF_THROW(af_flat(&par_arr, impl->parent->get()));
+            nd = 1;
+        } else {
+            par_arr = impl->parent->get();
+        }
+
         af_array tmp = 0;
-        AF_THROW(af_assign_gen(&tmp, parent->get(), nd, indices, other_arr));
-        parent->set(tmp);
+        AF_THROW(af_assign_gen(&tmp, par_arr, nd, impl->indices, other_arr));
+
+        af_array res = 0;
+        if (impl->lin) {
+            AF_THROW(af_moddims(&res, tmp, this_dims.ndims(), this_dims.get()));
+            AF_THROW(af_release_array(par_arr));
+            AF_THROW(af_release_array(tmp));
+        } else {
+            res = tmp;
+        }
+
+        impl->parent->set(res);
 
         if (dim >= 0 && (is_reordered || batch_assign)) {
-            if (other_arr) AF_THROW(af_destroy_array(other_arr));
+            if (other_arr) AF_THROW(af_release_array(other_arr));
         }
         return *this;
     }
@@ -456,11 +553,31 @@ namespace af
         return *this = out;
     }
 
-    af::array::array_proxy::array_proxy(array& par, af_index_t *ssss )
-        : parent(&par)
-        , indices()
+    af::array::array_proxy::array_proxy(array& par, af_index_t *ssss, bool linear)
+        : impl(new array_proxy_impl(par, ssss, linear))
     {
-        std::copy(ssss, ssss + AF_MAX_DIMS, indices);
+    }
+
+    af::array::array_proxy::array_proxy(const array_proxy &other)
+        : impl(new array_proxy_impl(*other.impl->parent, other.impl->indices, other.impl->lin))
+    {
+    }
+
+#if __cplusplus > 199711L
+    af::array::array_proxy::array_proxy(array_proxy &&other) {
+        impl = other.impl;
+        other.impl = nullptr;
+    }
+
+    array::array_proxy&
+    af::array::array_proxy::operator=(array_proxy &&other) {
+        array out = other;
+        return *this = out;
+    }
+#endif
+
+    af::array::array_proxy::~array_proxy() {
+        if(impl) delete impl;
     }
 
     array array::array_proxy::as(dtype type) const
@@ -485,7 +602,7 @@ namespace af
     {
         array tmp = *this;
         af_array out = 0;
-        AF_THROW(af_weak_copy(&out, tmp.get()));
+        AF_THROW(af_retain_array(&out, tmp.get()));
         return out;
     }
 
@@ -497,7 +614,7 @@ namespace af
     }
 
     MEM_FUNC(af_array               , get)
-    MEM_FUNC(dim_t               , elements)
+    MEM_FUNC(dim_t                  , elements)
     MEM_FUNC(array                  , T)
     MEM_FUNC(array                  , H)
     MEM_FUNC(dtype                  , type)
@@ -522,15 +639,17 @@ namespace af
 #undef MEM_FUNC
 
 
-#define ASSIGN_TYPE(TY, OP)                                     \
-    array::array_proxy&                                         \
-    array::array_proxy::operator OP(const TY &value)            \
-    {                                                           \
-        dim4 dims = seqToDims(indices, getDims(parent->get())); \
-        af::dtype ty = parent->type();                          \
-        array cst = constant(value, dims, ty);                  \
-        return this->operator OP(cst);                          \
-    }                                                           \
+#define ASSIGN_TYPE(TY, OP)                             \
+    array::array_proxy&                                 \
+    array::array_proxy::operator OP(const TY &value)    \
+    {                                                   \
+        dim4 pdims = getDims(impl->parent->get());      \
+        if (impl->lin) pdims = dim4(pdims.elements());  \
+        dim4 dims = seqToDims(impl->indices, pdims );   \
+        af::dtype ty = impl->parent->type();            \
+        array cst = constant(value, dims, ty);          \
+        return this->operator OP(cst);                  \
+    }                                                   \
 
 #define ASSIGN_OP(OP, op1)                      \
     ASSIGN_TYPE(double             , OP)        \
@@ -576,8 +695,18 @@ namespace af
     array::array_proxy::operator array() const
     {
         af_array tmp = 0;
-        af_array arr = parent->get();
-        AF_THROW(af_index_gen(&tmp, arr, AF_MAX_DIMS, indices));
+        af_array arr = 0;
+
+        if(impl->lin)  {
+            AF_THROW(af_flat(&arr, impl->parent->get()));
+        } else {
+            arr = impl->parent->get();
+        }
+
+        AF_THROW(af_index_gen(&tmp, arr, AF_MAX_DIMS, impl->indices));
+        if(impl->lin)  {
+            AF_THROW(af_release_array(arr));
+        }
 
         return array(tmp);
     }
@@ -585,19 +714,47 @@ namespace af
     array::array_proxy::operator array()
     {
         af_array tmp = 0;
-        af_array arr = parent->get();
-        AF_THROW(af_index_gen(&tmp, arr, AF_MAX_DIMS, indices));
+        af_array arr = 0;
 
-        int dim = gforDim(indices);
+        if(impl->lin)  {
+            AF_THROW(af_flat(&arr, impl->parent->get()));
+        } else {
+            arr = impl->parent->get();
+        }
+
+        AF_THROW(af_index_gen(&tmp, arr, AF_MAX_DIMS, impl->indices));
+        if(impl->lin)  {
+            AF_THROW(af_release_array(arr));
+        }
+
+        int dim = gforDim(impl->indices);
         if (tmp && dim >= 0) {
             arr = gforReorder(tmp, dim);
-            if (tmp) AF_THROW(af_destroy_array(tmp));
+            if (tmp) AF_THROW(af_release_array(tmp));
         } else {
             arr = tmp;
         }
 
         return array(arr);
     }
+
+    //FIXME: Check if this leaks
+#define MEM_INDEX(FUNC_SIG, USAGE)          \
+    array::array_proxy                      \
+    array::array_proxy::FUNC_SIG            \
+    {                                       \
+        array *out = new array(this->get());\
+        return out->USAGE;                  \
+    }
+
+    MEM_INDEX(row(int index)                , row(index));
+    MEM_INDEX(rows(int first, int last)     , rows(first, last));
+    MEM_INDEX(col(int index)                , col(index));
+    MEM_INDEX(cols(int first, int last)     , cols(first, last));
+    MEM_INDEX(slice(int index)              , slice(index));
+    MEM_INDEX(slices(int first, int last)   , slices(first, last));
+
+#undef MEM_INDEX
 
     ///////////////////////////////////////////////////////////////////////////
     // Operator =
@@ -609,11 +766,11 @@ namespace af
         }
         //TODO: Unsafe. loses data if af_weak_copy fails
         if(this->arr != 0) {
-            AF_THROW(af_destroy_array(this->arr));
+            AF_THROW(af_release_array(this->arr));
         }
 
         af_array temp = 0;
-        AF_THROW(af_weak_copy(&temp, other.get()));
+        AF_THROW(af_retain_array(&temp, other.get()));
         this->arr = temp;
         return *this;
     }
@@ -778,7 +935,7 @@ namespace af
     {                                                               \
         if (type() != (af::dtype)dtype_traits<T>::af_type) {        \
             AF_THROW_MSG("Requested type doesn't match with array", \
-                         AF_ERR_INVALID_TYPE);                      \
+                         AF_ERR_TYPE);                              \
         }                                                           \
                                                                     \
         T *res = new T[elements()];                                 \
@@ -796,14 +953,21 @@ namespace af
     template<> AFAPI T* array::device() const                       \
     {                                                               \
         void *ptr = NULL;                                           \
-        AF_THROW(af_get_device_ptr(&ptr, get(), true));             \
+        AF_THROW(af_get_device_ptr(&ptr, get()));                   \
         return (T *)ptr;                                            \
     }                                                               \
     template<> AFAPI void array::write(const T *ptr,                \
-               const size_t bytes, af_source_t src)                 \
+                                       const size_t bytes,          \
+                                       af::source src)              \
     {                                                               \
-        if(src == afHost)   AF_THROW(af_write_array(get(), ptr, bytes, (af_source)afHost));             \
-        if(src == afDevice) AF_THROW(af_write_array(get(), ptr, bytes, (af_source)afDevice));           \
+        if(src == afHost)   {                                       \
+            AF_THROW(af_write_array(get(), ptr, bytes,              \
+                                    (af::source)afHost));           \
+        }                                                           \
+        if(src == afDevice) {                                       \
+            AF_THROW(af_write_array(get(), ptr, bytes,              \
+                                    (af::source)afDevice));         \
+        }                                                           \
     }                                                               \
 
     INSTANTIATE(cdouble)
@@ -851,5 +1015,7 @@ namespace af
     //FIXME: This needs to be implemented at a later point
     void array::unlock() const {}
     void array::array_proxy::unlock() const {}
+
+    int array::nonzeros() const { return count<int>(*this); }
 
 }

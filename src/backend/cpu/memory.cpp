@@ -12,6 +12,18 @@
 
 namespace cpu
 {
+    static size_t memory_resolution = 1024; //1KB
+
+    void setMemStepSize(size_t step_bytes)
+    {
+        memory_resolution = step_bytes;
+    }
+
+    size_t getMemStepSize(void)
+    {
+        return memory_resolution;
+    }
+
     template<typename T>
     T* memAlloc(const size_t &elements)
     {
@@ -32,6 +44,12 @@ namespace cpu
 
     void pinnedGarbageCollect() { }
 
+    template<typename T>
+    void memUnlink(T *ptr)
+    {
+        memFree(ptr);
+    }
+
     void deviceMemoryInfo(size_t *alloc_bytes, size_t *alloc_buffers,
                           size_t *lock_bytes,  size_t *lock_buffers)
     {
@@ -49,11 +67,12 @@ namespace cpu
         memFree<T>(ptr);
     }
 
-#define INSTANTIATE(T)                                          \
-    template T* memAlloc(const size_t &elements);               \
-    template void memFree(T* ptr);                              \
-    template T* pinnedAlloc(const size_t &elements);            \
-    template void pinnedFree(T* ptr);                           \
+#define INSTANTIATE(T)                              \
+    template T* memAlloc(const size_t &elements);   \
+    template void memFree(T* ptr);                  \
+    template void memUnlink(T* ptr);                \
+    template T* pinnedAlloc(const size_t &elements);\
+    template void pinnedFree(T* ptr);               \
 
     INSTANTIATE(float)
     INSTANTIATE(cfloat)

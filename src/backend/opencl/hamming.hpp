@@ -7,18 +7,16 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <af/image.h>
-#include <af/array.h>
-#include "error.hpp"
+#include <Array.hpp>
 
-namespace af
+using af::features;
+
+namespace opencl
 {
 
-array medfilt(const array& in, const dim_t wind_length, const dim_t wind_width, const padType edge_pad)
-{
-    af_array out = 0;
-    AF_THROW(af_medfilt(&out, in.get(), wind_length, wind_width, edge_pad));
-    return array(out);
-}
+template<typename T>
+void hamming_matcher(Array<uint>& idx, Array<uint>& dist,
+                     const Array<T>& query, const Array<T>& train,
+                     const uint dist_dim, const uint n_dist);
 
 }

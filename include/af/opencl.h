@@ -14,6 +14,23 @@
 #endif
 
 #include <af/defines.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+    AFAPI af_err afcl_get_context(cl_context *ctx, const bool retain);
+
+    AFAPI af_err afcl_get_queue(cl_command_queue *queue, const bool retain);
+
+    AFAPI af_err afcl_get_device_id(cl_device_id *id);
+
+#ifdef __cplusplus
+}
+#endif
+
+#ifdef __cplusplus
+
 #include <af/array.h>
 #include <af/dim4.hpp>
 #include <af/exception.h>
@@ -23,21 +40,6 @@
 namespace afcl
 {
    /**
-        \addtogroup external
-        @{
-            @defgroup opencl_mat Interfacing with OpenCL
-            How to access ArrayFire's context, queue, and share data with other OpenCL code.
-
-            If your software is using ArrayFire's OpenCL backend, you can also write custom
-            kernels and do custom memory operations using native OpenCL commands. The functions
-            contained in the `afcl` namespace provide methods to get the context, queue, and
-            device(s) that ArrayFire is using as well as convert `cl_mem` handles to
-            `af::array` objects.
-
-            Please note: the `af::array` constructors are not thread safe. You may create and
-            upload data to `cl_mem` objects from separate threads, but the thread which
-            instantiated ArrayFire must do the `cl_mem` to `af::array` conversion.
-        @}
 
     */
     /**
@@ -47,30 +49,58 @@ namespace afcl
     /**
     Get a handle to ArrayFire's OpenCL context
 
-    \param retain If true calls clRetainContext prior to returning the context.
-                  Set to true if this value will be passed to a cl::Context constructor
-     */
-    AFAPI cl_context getContext(bool retain = false);
+    \param[in] retain if true calls clRetainContext prior to returning the context
+    \returns the current context being used by ArrayFire
+
+    \note Set \p retain to true if this value will be passed to a cl::Context constructor
+    */
+    static inline cl_context getContext(bool retain = false)
+    {
+        cl_context ctx;
+        af_err err = afcl_get_context(&ctx, retain);
+        if (err != AF_SUCCESS) throw af::exception("Failed to get OpenCL context from arrayfire");
+        return ctx;
+    }
+
     /**
     Get a handle to ArrayFire's OpenCL command queue
 
-    \param retain If true calls clRetainCommandQueue prior to returning the context.
-                  Set to true if this value will be passed to a cl::CommandQueue constructor
-     */
-    AFAPI cl_command_queue getQueue(bool retain = false);
+    \param[in] retain if true calls clRetainCommandQueue prior to returning the context
+    \returns the current command queue being used by ArrayFire
+
+    \note Set \p retain to true if this value will be passed to a cl::CommandQueue constructor
+    */
+    static inline cl_command_queue getQueue(bool retain = false)
+    {
+        cl_command_queue queue;
+        af_err err = afcl_get_queue(&queue, retain);
+        if (err != AF_SUCCESS) throw af::exception("Failed to get OpenCL command queue from arrayfire");
+        return queue;
+    }
 
     /**
-    Get the device ID for ArrayFire's current active device
-     */
-    AFAPI cl_device_id getDeviceId();
+       Get the device ID for ArrayFire's current active device
+       \returns the cl_device_id of the current device
+    */
+    static inline cl_device_id getDeviceId()
+    {
+        cl_device_id id;
+        af_err err = afcl_get_device_id(&id);
+        if (err != AF_SUCCESS) throw af::exception("Failed to get OpenCL device ID");
+
+        return id;
+    }
 
     /**
     Create an af::array object from an OpenCL cl_mem buffer
 
-    \param idims the dimensions of the buffer
-    \param type the data type contained in the buffer
-    \param retain If true, instructs ArrayFire to retain the memory object. Set to true if
-        the memory originates from a cl::Buffer object
+    \param[in] idims the dimensions of the buffer
+    \param[in] buf the OpenCL memory object
+    \param[in] type the data type contained in the buffer
+    \param[in] retain if true, instructs ArrayFire to retain the memory object
+    \returns an array object created from the OpenCL buffer
+
+    \note Set \p retain to true if the memory originates from a cl::Buffer object
      */
     static inline af::array array(af::dim4 idims, cl_mem buf, af::dtype type, bool retain=false)
     {
@@ -104,10 +134,13 @@ namespace afcl
     /**
     Create an af::array object from an OpenCL cl_mem buffer
 
-    \param dim0 the length of the first dimension of the buffer
-    \param type the data type contained in the buffer
-    \param retain If true, instructs ArrayFire to retain the memory object. Set to true if
-        the memory originates from a cl::Buffer object
+    \param[in] dim0 the length of the first dimension of the buffer
+    \param[in] buf the OpenCL memory object
+    \param[in] type the data type contained in the buffer
+    \param[in] retain if true, instructs ArrayFire to retain the memory object
+    \returns an array object created from the OpenCL buffer
+
+    \note Set \p retain to true if the memory originates from a cl::Buffer object
      */
     static inline af::array array(dim_t dim0,
                                   cl_mem buf, af::dtype type, bool retain=false)
@@ -118,11 +151,14 @@ namespace afcl
     /**
     Create an af::array object from an OpenCL cl_mem buffer
 
-    \param dim0 the length of the first dimension of the buffer
-    \param dim1 the length of the second dimension of the buffer
-    \param type the data type contained in the buffer
-    \param retain If true, instructs ArrayFire to retain the memory object. Set to true if
-        the memory originates from a cl::Buffer object
+    \param[in] dim0 the length of the first dimension of the buffer
+    \param[in] dim1 the length of the second dimension of the buffer
+    \param[in] buf the OpenCL memory object
+    \param[in] type the data type contained in the buffer
+    \param[in] retain if true, instructs ArrayFire to retain the memory object
+    \returns an array object created from the OpenCL buffer
+
+    \note Set \p retain to true if the memory originates from a cl::Buffer object
      */
     static inline af::array array(dim_t dim0, dim_t dim1,
                                   cl_mem buf, af::dtype type, bool retain=false)
@@ -133,12 +169,15 @@ namespace afcl
     /**
     Create an af::array object from an OpenCL cl_mem buffer
 
-    \param dim0 the length of the first dimension of the buffer
-    \param dim1 the length of the second dimension of the buffer
-    \param dim2 the length of the third dimension of the buffer
-    \param type the data type contained in the buffer
-    \param retain If true, instructs ArrayFire to retain the memory object. Set to true if
-        the memory originates from a cl::Buffer object
+    \param[in] dim0 the length of the first dimension of the buffer
+    \param[in] dim1 the length of the second dimension of the buffer
+    \param[in] dim2 the length of the third dimension of the buffer
+    \param[in] buf the OpenCL memory object
+    \param[in] type the data type contained in the buffer
+    \param[in] retain if true, instructs ArrayFire to retain the memory object
+    \returns an array object created from the OpenCL buffer
+
+    \note Set \p retain to true if the memory originates from a cl::Buffer object
      */
     static inline af::array array(dim_t dim0, dim_t dim1,
                                   dim_t dim2,
@@ -150,13 +189,16 @@ namespace afcl
     /**
     Create an af::array object from an OpenCL cl_mem buffer
 
-    \param dim0 the length of the first dimension of the buffer
-    \param dim1 the length of the second dimension of the buffer
-    \param dim2 the length of the third dimension of the buffer
-    \param dim3 the length of the fourth dimension of the buffer
-    \param type the data type contained in the buffer
-    \param retain If true, instructs ArrayFire to retain the memory object. Set to true if
-        the memory originates from a cl::Buffer object
+    \param[in] dim0 the length of the first dimension of the buffer
+    \param[in] dim1 the length of the second dimension of the buffer
+    \param[in] dim2 the length of the third dimension of the buffer
+    \param[in] dim3 the length of the fourth dimension of the buffer
+    \param[in] buf the OpenCL memory object
+    \param[in] type the data type contained in the buffer
+    \param[in] retain if true, instructs ArrayFire to retain the memory object
+    \returns an array object created from the OpenCL buffer
+
+    \note Set \p retain to true if the memory originates from a cl::Buffer object
      */
     static inline af::array array(dim_t dim0, dim_t dim1,
                                   dim_t dim2, dim_t dim3,
@@ -169,3 +211,15 @@ namespace afcl
       @}
     */
 }
+
+namespace af {
+    template<> AFAPI cl_mem *array::device() const
+    {
+        cl_mem *mem = new cl_mem;
+        af_err err = af_get_device_ptr((void **)mem, get());
+        if (err != AF_SUCCESS) throw af::exception("Failed to get cl_mem from array object");
+        return mem;
+    }
+}
+
+#endif

@@ -8,16 +8,19 @@
  ********************************************************/
 #pragma once
 
+#include <platform.hpp>
 #include <af/defines.h>
-#include <cl.hpp>
+
 namespace opencl
 {
 
     cl::Buffer *bufferAlloc(const size_t &bytes);
     void bufferFree(cl::Buffer *buf);
+    void bufferUnlink(cl::Buffer *ptr);
 
     template<typename T> T *memAlloc(const size_t &elements);
     template<typename T> void memFree(T *ptr);
+    template<typename T> void memUnlink(T *ptr);
 
     template<typename T> T* pinnedAlloc(const size_t &elements);
     template<typename T> void pinnedFree(T* ptr);
@@ -29,4 +32,7 @@ namespace opencl
                           size_t *lock_bytes,  size_t *lock_buffers);
     void garbageCollect();
     void pinnedGarbageCollect();
+
+    void setMemStepSize(size_t step_bytes);
+    size_t getMemStepSize(void);
 }

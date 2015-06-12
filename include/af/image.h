@@ -11,7 +11,6 @@
 #include <af/features.h>
 
 #ifdef __cplusplus
-#include <utility>
 namespace af
 {
 class array;
@@ -164,8 +163,8 @@ AFAPI array skew(const array& in, const float skew0, const float skew1, const di
     C++ Interface for bilateral filter
 
     \param[in]  in array is the input image
-    \param[in]  spatial_sigma is the spatial variance paramter that decides the filter window
-    \param[in]  chromatic_sigma is the chromatic variance paramter
+    \param[in]  spatial_sigma is the spatial variance parameter that decides the filter window
+    \param[in]  chromatic_sigma is the chromatic variance parameter
     \param[in]  is_color indicates if the input \p in is color image or grayscale
     \return     the processed image
 
@@ -202,18 +201,18 @@ AFAPI array histogram(const array &in, const unsigned nbins, const double minval
 AFAPI array histogram(const array &in, const unsigned nbins);
 
 /**
-    C++ Interface for meanshift
+    C++ Interface for mean shift
 
     \param[in]  in array is the input image
-    \param[in]  spatial_sigma is the spatial variance paramter that decides the filter window
-    \param[in]  chromatic_sigma is the chromatic variance paramter
+    \param[in]  spatial_sigma is the spatial variance parameter that decides the filter window
+    \param[in]  chromatic_sigma is the chromatic variance parameter
     \param[in]  iter is the number of iterations filter operation is performed
     \param[in]  is_color indicates if the input \p in is color image or grayscale
     \return     the processed image
 
-    \ingroup image_func_meanshift
+    \ingroup image_func_mean_shift
 */
-AFAPI array meanshift(const array& in, const float spatial_sigma, const float chromatic_sigma, const unsigned iter, const bool is_color=false);
+AFAPI array meanShift(const array& in, const float spatial_sigma, const float chromatic_sigma, const unsigned iter, const bool is_color=false);
 
 /**
     C++ Interface for median filter
@@ -229,7 +228,35 @@ AFAPI array meanshift(const array& in, const float spatial_sigma, const float ch
 
     \ingroup image_func_medfilt
 */
-AFAPI array medfilt(const array& in, const dim_t wind_length = 3, const dim_t wind_width = 3, const padType edge_pad = AF_PAD_ZERO);
+AFAPI array medfilt(const array& in, const dim_t wind_length = 3, const dim_t wind_width = 3, const borderType edge_pad = AF_PAD_ZERO);
+
+/**
+    C++ Interface for minimum filter
+
+    \param[in]  in array is the input image
+    \param[in]  wind_length is the kernel height
+    \param[in]  wind_width is the kernel width
+    \param[in]  edge_pad value will decide what happens to border when running
+                filter in their neighborhood. It takes one of the values [\ref AF_PAD_ZERO | \ref AF_PAD_SYM]
+    \return     the processed image
+
+    \ingroup image_func_minfilt
+*/
+AFAPI array minfilt(const array& in, const dim_t wind_length = 3, const dim_t wind_width = 3, const borderType edge_pad = AF_PAD_ZERO);
+
+/**
+    C++ Interface for maximum filter
+
+    \param[in]  in array is the input image
+    \param[in]  wind_length is the kernel height
+    \param[in]  wind_width is the kernel width
+    \param[in]  edge_pad value will decide what happens to border when running
+                filter in their neighborhood. It takes one of the values [\ref AF_PAD_ZERO | \ref AF_PAD_SYM]
+    \return     the processed image
+
+    \ingroup image_func_maxfilt
+*/
+AFAPI array maxfilt(const array& in, const dim_t wind_length = 3, const dim_t wind_width = 3, const borderType edge_pad = AF_PAD_ZERO);
 
 /**
     C++ Interface for image dilation (max filter)
@@ -245,7 +272,7 @@ AFAPI array medfilt(const array& in, const dim_t wind_length = 3, const dim_t wi
 AFAPI array dilate(const array& in, const array& mask);
 
 /**
-    C++ Interface for 3d image dilation
+    C++ Interface for 3D image dilation
 
     \param[in]  in array is the input volume
     \param[in]  mask is the neighborhood delta volume
@@ -253,7 +280,7 @@ AFAPI array dilate(const array& in, const array& mask);
 
     \ingroup image_func_dilate3d
 */
-AFAPI array dilate3d(const array& in, const array& mask);
+AFAPI array dilate3(const array& in, const array& mask);
 
 /**
     C++ Interface for image erosion (min filter)
@@ -277,7 +304,7 @@ AFAPI array erode(const array& in, const array& mask);
 
     \ingroup image_func_erode3d
 */
-AFAPI array erode3d(const array& in, const array& mask);
+AFAPI array erode3(const array& in, const array& mask);
 
 /**
     C++ Interface for getting regions in an image
@@ -309,76 +336,10 @@ AFAPI array erode3d(const array& in, const array& mask);
 AFAPI array regions(const array& in, const af::connectivity connectivity=AF_CONNECTIVITY_4, const dtype type=f32);
 
 /**
-    C++ Interface for FAST feature detector
-
-    \param[in] in array containing a grayscale image (color images are not
-               supported)
-    \param[in] thr FAST threshold for which a pixel of the circle around
-               the central pixel is considered to be greater or smaller
-    \param[in] arc_length length of arc (or sequential segment) to be tested,
-               must be within range [9-16]
-    \param[in] non_max performs non-maximal suppression if true
-    \param[in] feature_ratio maximum ratio of features to detect, the maximum
-               number of features is calculated by feature_ratio * in.elements().
-               The maximum number of features is not based on the score, instead
-               features detected after the limit is reached are discarded
-    \param[in] edge is the length of the edges in the image to be discarded
-               by FAST (minimum is 3, as the radius of the circle)
-    \return    features object containing arrays for x and y coordinates and
-               score, while array orientation is set to 0 as FAST does not
-               compute orientation, and size is set to 1 as FAST does not
-               compute multiple scales
-
-    \ingroup cv_func_fast
- */
-AFAPI features fast(const array& in, const float thr=20.0f, const unsigned arc_length=9, const bool non_max=true, const float feature_ratio=0.05, const unsigned edge=3);
-
-/**
-    C++ Interface for ORB feature descriptor
-
-    \param[out] feat features object composed of arrays for x and y
-                coordinates, score, orientation and size of selected features
-    \param[out] desc Nx8 array containing extracted descriptors, where N is the
-                number of selected features
-    \param[in]  image array containing a grayscale image (color images are not
-                supported)
-    \param[in]  fast_thr FAST threshold for which a pixel of the circle around
-                the central pixel is considered to be brighter or darker
-    \param[in]  max_feat Maximum number of features to hold (will only keep the
-                max_feat features with higher Harris responses)
-    \param[in]  scl_fctr Factor to downsample the input image, meaning that
-                each level will hold prior level dimensions divided by scl_fctr
-    \param[in]  levels Number of levels to be computed for the image pyramid
-    \param[in]  blur_img Blur image with a Gaussian filter with sigma=2 before
-                computing descriptors to increase robustness against noise if
-                true
-
-    \ingroup cv_func_orb
- */
-AFAPI void orb(features& feat, array& desc, const array& image, const float fast_thr=20.f, const unsigned max_feat=400, const float scl_fctr=1.5f, const unsigned levels=4, const bool blur_img=false);
-
-/**
-   C++ Interface for image template matching
-
-   \param[in]  searchImg is an array with image data
-   \param[in]  templateImg is the template we are looking for in the image
-   \param[in]  mType is metric that should be used to calculate the disparity
-               between window in the image and the template image. It can one of
-               the values defined by the enum \ref af_match_type
-   \return     array with dispartiy values for the window starting at
-               corresponding pixel position
-
-   \note If \p search_img is 3d array, a batch operation will be performed.
-
-   \ingroup image_func_match_template
- */
-AFAPI array matchTemplate(const array &searchImg, const array &templateImg, const matchType mType=AF_SAD);
-
-/**
    C++ Interface for extracting sobel gradients
 
-   \param[out] dx is derivate along horizontal direction
-   \param[out] dy is derivate along vertical direction
+   \param[out] dx is derivative along horizontal direction
+   \param[out] dy is derivative along vertical direction
    \param[in]  img is an array with image data
    \param[in]  ker_size sobel kernel size or window size
 
@@ -438,20 +399,20 @@ AFAPI array gray2rgb(const array& in, const float rFactor=1.0, const float gFact
    \snippet test/histogram.cpp ex_image_histequal
 
    \param[in]  in is the input array, non-normalized input (!! assumes values [0-255] !!)
-   \param[in]  hist target histogram to approximate in output (based on # of bins)
+   \param[in]  hist target histogram to approximate in output (based on number of bins)
    \return     data with histogram approximately equal to histogram
 
    \note \p in must be two dimensional.
 
    \ingroup image_func_histequal
  */
-AFAPI array histequal(const array& in, const array& hist);
+AFAPI array histEqual(const array& in, const array& hist);
 
 /**
    C++ Interface for generating gausian kernels
 
-   \param[in]  rows
-   \param[in]  cols
+   \param[in]  rows number of kernel rows
+   \param[in]  cols number of kernel columns
    \param[in]  sig_r (default 0) (calculated internally as 0.25 * rows + 0.75)
    \param[in]  sig_c (default 0) (calculated internally as 0.25 * cols + 0.75)
    \return     an array with values generated using gaussian function
@@ -498,7 +459,7 @@ AFAPI array rgb2hsv(const array& in);
 
    \ingroup image_func_colorspace
  */
-AFAPI array colorspace(const array& image, const CSpace to, const CSpace from);
+AFAPI array colorSpace(const array& image, const CSpace to, const CSpace from);
 
 }
 #endif
@@ -690,7 +651,7 @@ extern "C" {
 
         \ingroup image_func_dilate3d
     */
-    AFAPI af_err af_dilate3d(af_array *out, const af_array in, const af_array mask);
+    AFAPI af_err af_dilate3(af_array *out, const af_array in, const af_array mask);
 
     /**
         C Interface for image erosion (min filter)
@@ -718,15 +679,15 @@ extern "C" {
 
         \ingroup image_func_erode3d
     */
-    AFAPI af_err af_erode3d(af_array *out, const af_array in, const af_array mask);
+    AFAPI af_err af_erode3(af_array *out, const af_array in, const af_array mask);
 
     /**
         C Interface for bilateral filter
 
         \param[out] out array is the processed image
         \param[in]  in array is the input image
-        \param[in]  spatial_sigma is the spatial variance paramter that decides the filter window
-        \param[in]  chromatic_sigma is the chromatic variance paramter
+        \param[in]  spatial_sigma is the spatial variance parameter that decides the filter window
+        \param[in]  chromatic_sigma is the chromatic variance parameter
         \param[in]  isColor indicates if the input \p in is color image or grayscale
         \return     \ref AF_SUCCESS if the filter is applied successfully,
         otherwise an appropriate error code is returned.
@@ -740,16 +701,16 @@ extern "C" {
 
         \param[out] out array is the processed image
         \param[in]  in array is the input image
-        \param[in]  spatial_sigma is the spatial variance paramter that decides the filter window
-        \param[in]  chromatic_sigma is the chromatic variance paramter
+        \param[in]  spatial_sigma is the spatial variance parameter that decides the filter window
+        \param[in]  chromatic_sigma is the chromatic variance parameter
         \param[in]  iter is the number of iterations filter operation is performed
         \param[in]  is_color indicates if the input \p in is color image or grayscale
         \return     \ref AF_SUCCESS if the filter is applied successfully,
         otherwise an appropriate error code is returned.
 
-        \ingroup image_func_meanshift
+        \ingroup image_func_mean_shift
     */
-    AFAPI af_err af_meanshift(af_array *out, const af_array in, const float spatial_sigma, const float chromatic_sigma, const unsigned iter, const bool is_color);
+    AFAPI af_err af_mean_shift(af_array *out, const af_array in, const float spatial_sigma, const float chromatic_sigma, const unsigned iter, const bool is_color);
 
     /**
         C Interface for median filter
@@ -765,7 +726,39 @@ extern "C" {
 
         \ingroup image_func_medfilt
     */
-    AFAPI af_err af_medfilt(af_array *out, const af_array in, const dim_t wind_length, const dim_t wind_width, const af_pad_type edge_pad);
+    AFAPI af_err af_medfilt(af_array *out, const af_array in, const dim_t wind_length, const dim_t wind_width, const af_border_type edge_pad);
+
+    /**
+        C Interface for minimum filter
+
+        \param[out] out array is the processed image
+        \param[in]  in array is the input image
+        \param[in]  wind_length is the kernel height
+        \param[in]  wind_width is the kernel width
+        \param[in]  edge_pad value will decide what happens to border when running
+                    filter in their neighborhood. It takes one of the values [\ref AF_PAD_ZERO | \ref AF_PAD_SYM]
+        \return     \ref AF_SUCCESS if the minimum filter is applied successfully,
+        otherwise an appropriate error code is returned.
+
+        \ingroup image_func_minfilt
+    */
+    AFAPI af_err af_minfilt(af_array *out, const af_array in, const dim_t wind_length, const dim_t wind_width, const af_border_type edge_pad);
+
+    /**
+       C Interface for maximum filter
+
+       \param[out] out array is the processed image
+       \param[in]  in array is the input image
+       \param[in]  wind_length is the kernel height
+       \param[in]  wind_width is the kernel width
+       \param[in]  edge_pad value will decide what happens to border when running
+       filter in their neighborhood. It takes one of the values [\ref AF_PAD_ZERO | \ref AF_PAD_SYM]
+       \return     \ref AF_SUCCESS if the maximum filter is applied successfully,
+       otherwise an appropriate error code is returned.
+
+       \ingroup image_func_maxfilt
+    */
+    AFAPI af_err af_maxfilt(af_array *out, const af_array in, const dim_t wind_length, const dim_t wind_width, const af_border_type edge_pad);
 
     /**
         C Interface for regions in an image
@@ -782,83 +775,13 @@ extern "C" {
     AFAPI af_err af_regions(af_array *out, const af_array in, const af_connectivity connectivity, const af_dtype ty);
 
     /**
-        C Interface for FAST feature detector
-
-        \param[out] out struct containing arrays for x and y
-                    coordinates and score, while array orientation is set to 0
-                    as FAST does not compute orientation, and size is set to 1
-                    as FAST does not compute multiple scales
-        \param[in]  in array containing a grayscale image (color images are
-                    not supported)
-        \param[in]  thr FAST threshold for which a pixel of the circle around
-                    the central pixel is considered to be greater or smaller
-        \param[in]  arc_length length of arc (or sequential segment) to be
-                    tested, must be within range [9-16]
-        \param[in]  non_max performs non-maximal suppression if true
-        \param[in]  feature_ratio maximum ratio of features to detect, the
-                    maximum number of features is calculated by
-                    feature_ratio * in.elements(). The maximum number of
-                    features is not based on the score, instead features
-                    detected after the limit is reached are discarded
-        \param[in]  edge is the length of the edges in the image to be
-                    discarded by FAST (minimum is 3, as the radius of the
-                    circle)
-
-        \ingroup cv_func_fast
-    */
-    AFAPI af_err af_fast(af_features *out, const af_array in, const float thr, const unsigned arc_length, const bool non_max, const float feature_ratio, const unsigned edge);
-
-    /**
-        C Interface for ORB feature descriptor
-
-        \param[out] feat af_features struct composed of arrays for x and y
-                    coordinates, score, orientation and size of selected features
-        \param[out] desc Nx8 array containing extracted descriptors, where N is the
-                    number of selected features
-        \param[in]  in array containing a grayscale image (color images are not
-                    supported)
-        \param[in]  fast_thr FAST threshold for which a pixel of the circle around
-                    the central pixel is considered to be brighter or darker
-        \param[in]  max_feat Maximum number of features to hold (will only keep the
-                    max_feat features with higher Harris responses)
-        \param[in]  scl_fctr Factor to downsample the input image, meaning that
-                    each level will hold prior level dimensions divided by scl_fctr
-        \param[in]  levels Number of levels to be computed for the image pyramid
-        \param[in]  blur_img Blur image with a Gaussian filter with sigma=2 before
-                    computing descriptors to increase robustness against noise if
-                    true
-
-        \ingroup cv_func_orb
-    */
-    AFAPI af_err af_orb(af_features *feat, af_array *desc, const af_array in, const float fast_thr, const unsigned max_feat, const float scl_fctr, const unsigned levels, const bool blur_img);
-
-    /**
-       C Interface for image template matching
-
-       \param[out] out will have dispartiy values for the window starting at
-                   corresponding pixel position
-       \param[in]  search_img is an array with image data
-       \param[in]  template_img is the template we are looking for in the image
-       \param[in]  m_type is metric that should be used to calculate the disparity
-                   between window in the image and the template image. It can one of
-                   the values defined by the enum \ref af_match_type
-       \return     \ref AF_SUCCESS if disparity metric is computed successfully,
-       otherwise an appropriate error code is returned.
-
-       \note If \p search_img is 3d array, a batch operation will be performed.
-
-       \ingroup cv_func_match_template
-    */
-    AFAPI af_err af_match_template(af_array *out, const af_array search_img, const af_array template_img, const af_match_type m_type);
-
-    /**
        C Interface for getting sobel gradients
 
-       \param[out] dx is derivate along horizontal direction
-       \param[out] dy is derivate along vertical direction
+       \param[out] dx is derivative along horizontal direction
+       \param[out] dy is derivative along vertical direction
        \param[in]  img is an array with image data
        \param[in]  ker_size sobel kernel size or window size
-       \return     \ref AF_SUCCESS if sobel derivates are computed successfully,
+       \return     \ref AF_SUCCESS if sobel derivatives are computed successfully,
        otherwise an appropriate error code is returned.
 
        \note If \p img is 3d array, a batch operation will be performed.
@@ -870,8 +793,8 @@ extern "C" {
     /**
        C Interface for converting RGB to gray
 
-       \param[out] out is an array in target colorspace
-       \param[in]  in is an array in the RGB colorspace
+       \param[out] out is an array in target color space
+       \param[in]  in is an array in the RGB color space
        \param[in]  rPercent is percentage of red channel value contributing to grayscale intensity
        \param[in]  gPercent is percentage of green channel value contributing to grayscale intensity
        \param[in]  bPercent is percentage of blue channel value contributing to grayscale intensity
@@ -887,8 +810,8 @@ extern "C" {
     /**
        C Interface for converting gray to RGB
 
-       \param[out] out is an array in target colorspace
-       \param[in]  in is an array in the Grayscale colorspace
+       \param[out] out is an array in target color space
+       \param[in]  in is an array in the Grayscale color space
        \param[in]  rFactor is percentage of intensity value contributing to red channel
        \param[in]  gFactor is percentage of intensity value contributing to green channel
        \param[in]  bFactor is percentage of intensity value contributing to blue channel
@@ -906,7 +829,7 @@ extern "C" {
 
        \param[out] out is an array with data that has histogram approximately equal to histogram
        \param[in]  in is the input array, non-normalized input (!! assumes values [0-255] !!)
-       \param[in]  hist target histogram to approximate in output (based on # of bins)
+       \param[in]  hist target histogram to approximate in output (based on number of bins)
        \return     \ref AF_SUCCESS if the color transformation is successful,
        otherwise an appropriate error code is returned.
 
@@ -914,14 +837,14 @@ extern "C" {
 
        \ingroup image_func_histequal
     */
-    AFAPI af_err af_histequal(af_array *out, const af_array in, const af_array hist);
+    AFAPI af_err af_hist_equal(af_array *out, const af_array in, const af_array hist);
 
     /**
        C Interface generating gaussian kernels
 
        \param[out] out is an array with values generated using gaussian function
-       \param[in]  rows
-       \param[in]  cols
+       \param[in]  rows number of kernel rows
+       \param[in]  cols number of kernel columns
        \param[in]  sigma_r (default 0) (calculated internally as 0.25 * rows + 0.75)
        \param[in]  sigma_c (default 0) (calculated internally as 0.25 * cols + 0.75)
        \return     \ref AF_SUCCESS if gaussian distribution values are generated successfully,
@@ -936,8 +859,8 @@ extern "C" {
     /**
        C Interface for converting HSV to RGB
 
-       \param[out] out is an array in the RGB colorspace
-       \param[in]  in is an array in the HSV colorspace
+       \param[out] out is an array in the RGB color space
+       \param[in]  in is an array in the HSV color space
        \return     \ref AF_SUCCESS if the color transformation is successful,
        otherwise an appropriate error code is returned.
 
@@ -950,8 +873,8 @@ extern "C" {
     /**
        C Interface for converting RGB to HSV
 
-       \param[out] out is an array in the HSV colorspace
-       \param[in]  in is an array in the RGB colorspace
+       \param[out] out is an array in the HSV color space
+       \param[in]  in is an array in the RGB color space
        \return     \ref AF_SUCCESS if the color transformation is successful,
        otherwise an appropriate error code is returned.
 
@@ -962,14 +885,12 @@ extern "C" {
     AFAPI af_err af_rgb2hsv(af_array* out, const af_array in);
 
     /**
-       C Interface wrapper for colorspace conversion
+       C Interface wrapper for color space conversion
 
-       \param[out] out is an array in target colorspace \param[in]  image is
-       the input array
-
-       \param[in]  to is the target array colorspace \param[in]
-       from is the input array colorspace
-
+       \param[out] out is an array in target color space
+       \param[in]  image is the input array
+       \param[in]  to is the target array color space \param[in]
+       from is the input array color space
        \return     \ref AF_SUCCESS if the color transformation is successful,
        otherwise an appropriate error code
        is returned.
@@ -980,7 +901,7 @@ extern "C" {
 
        \ingroup image_func_colorspace
     */
-    AFAPI af_err af_colorspace(af_array *out, const af_array image, const af_cspace_t to, const af_cspace_t from);
+    AFAPI af_err af_color_space(af_array *out, const af_array image, const af_cspace_t to, const af_cspace_t from);
 
 #ifdef __cplusplus
 }

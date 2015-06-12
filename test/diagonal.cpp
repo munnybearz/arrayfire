@@ -4,8 +4,8 @@
 #include <arrayfire.h>
 #include <iostream>
 
-using namespace std;
 using namespace af;
+using std::vector;
 
 template<typename T>
 class Diagonal : public ::testing::Test
@@ -27,7 +27,7 @@ TYPED_TEST(Diagonal, Create)
             input[i] = i;
         }
         for(int jj = 10; jj < size; jj+=100) {
-            array data(jj, &input.front(), af::afHost, dtype_traits<TypeParam>::af_type);
+            array data(jj, &input.front(), afHost);
             array out = diag(data, 0, false);
 
             vector<TypeParam> h_out(out.elements());
@@ -41,7 +41,7 @@ TYPED_TEST(Diagonal, Create)
             }
         }
     } catch (const af::exception& ex) {
-        FAIL() << ex.what() << endl;
+        FAIL() << ex.what() << std::endl;
     }
 }
 
@@ -56,7 +56,7 @@ TYPED_TEST(Diagonal, Extract)
             input[i] = i;
         }
         for(int jj = 10; jj < size; jj+=100) {
-            array data(jj, jj, &input.front(), af::afHost, dtype_traits<TypeParam>::af_type);
+            array data(jj, jj, &input.front(), afHost);
             array out = diag(data, 0);
 
             vector<TypeParam> h_out(out.elements());
@@ -67,6 +67,23 @@ TYPED_TEST(Diagonal, Extract)
             }
         }
     } catch (const af::exception& ex) {
-        FAIL() << ex.what() << endl;
+        FAIL() << ex.what() << std::endl;
+    }
+}
+
+TEST(Diagonal, ExtractGFOR)
+{
+    dim4 dims = dim4(100, 100, 3);
+    array A = round(100 * randu(dims));
+    array B = constant(0, 100, 1, 3);
+
+    gfor(seq ii, 3) {
+        B(span, span, ii) = diag(A(span, span, ii));
+    }
+
+    for(int ii = 0; ii < 3; ii++) {
+        array c_ii = diag(A(span, span, ii));
+        array b_ii = B(span, span, ii);
+        ASSERT_EQ(max<double>(abs(c_ii - b_ii)) < 1E-5, true);
     }
 }

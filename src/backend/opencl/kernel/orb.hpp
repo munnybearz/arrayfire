@@ -84,11 +84,11 @@ void orb(unsigned* out_feat,
 {
     try {
         static std::once_flag compileFlags[DeviceManager::MAX_DEVICES];
-        static Program            orbProgs[DeviceManager::MAX_DEVICES];
-        static Kernel             hrKernel[DeviceManager::MAX_DEVICES];
-        static Kernel             kfKernel[DeviceManager::MAX_DEVICES];
-        static Kernel             caKernel[DeviceManager::MAX_DEVICES];
-        static Kernel             eoKernel[DeviceManager::MAX_DEVICES];
+        static std::map<int, Program*> orbProgs;
+        static std::map<int, Kernel*>  hrKernel;
+        static std::map<int, Kernel*>  kfKernel;
+        static std::map<int, Kernel*>  caKernel;
+        static std::map<int, Kernel*>  eoKernel;
 
         int device = getActiveDeviceId();
 
@@ -103,15 +103,14 @@ void orb(unsigned* out_feat,
                     options << " -D USE_DOUBLE";
                 }
 
-                buildProgram(orbProgs[device],
-                             orb_cl,
-                             orb_cl_len,
-                             options.str());
+                cl::Program prog;
+                buildProgram(prog, orb_cl, orb_cl_len, options.str());
+                orbProgs[device] = new Program(prog);
 
-                hrKernel[device] = Kernel(orbProgs[device], "harris_response");
-                kfKernel[device] = Kernel(orbProgs[device], "keep_features");
-                caKernel[device] = Kernel(orbProgs[device], "centroid_angle");
-                eoKernel[device] = Kernel(orbProgs[device], "extract_orb");
+                hrKernel[device] = new Kernel(*orbProgs[device], "harris_response");
+                kfKernel[device] = new Kernel(*orbProgs[device], "keep_features");
+                caKernel[device] = new Kernel(*orbProgs[device], "centroid_angle");
+                eoKernel[device] = new Kernel(*orbProgs[device], "extract_orb");
             });
 
         unsigned patch_size = REF_PAT_SIZE;
@@ -236,7 +235,7 @@ void orb(unsigned* out_feat,
             auto hrOp = make_kernel<Buffer, Buffer, Buffer,
                                     Buffer, Buffer, const unsigned,
                                     Buffer, Buffer, KParam,
-                                    const unsigned, const float, const unsigned> (hrKernel[device]);
+                                    const unsigned, const float, const unsigned> (*hrKernel[device]);
 
             hrOp(EnqueueArgs(getQueue(), global, local),
                  *d_x_harris, *d_y_harris, *d_score_harris,
@@ -247,9 +246,11 @@ void orb(unsigned* out_feat,
 
             getQueue().enqueueReadBuffer(*d_usable_feat, CL_TRUE, 0, sizeof(unsigned), &usable_feat);
 
-            bufferFree(d_x_feat.data);
-            bufferFree(d_y_feat.data);
-            bufferFree(d_usable_feat);
+            if (lvl_feat > 0) { //This is just to supress warnings
+                bufferFree(d_x_feat.data);
+                bufferFree(d_y_feat.data);
+                bufferFree(d_usable_feat);
+            }
 
             if (usable_feat == 0) {
                 feat_pyr[i] = 0;
@@ -300,7 +301,7 @@ void orb(unsigned* out_feat,
 
             auto kfOp = make_kernel<Buffer, Buffer, Buffer,
                                     Buffer, Buffer, Buffer, Buffer,
-                                    const unsigned> (kfKernel[device]);
+                                    const unsigned> (*kfKernel[device]);
 
             kfOp(EnqueueArgs(getQueue(), global_keep, local_keep),
                  *d_x_lvl, *d_y_lvl, *d_score_lvl,
@@ -323,7 +324,7 @@ void orb(unsigned* out_feat,
 
             auto caOp = make_kernel<Buffer, Buffer, Buffer,
                                     const unsigned, Buffer, KParam,
-                                    const unsigned> (caKernel[device]);
+                                    const unsigned> (*caKernel[device]);
 
             caOp(EnqueueArgs(getQueue(), global_centroid, local_centroid),
                  *d_x_lvl, *d_y_lvl, *d_ori_lvl,
@@ -375,7 +376,7 @@ void orb(unsigned* out_feat,
             auto eoOp = make_kernel<Buffer, const unsigned,
                                     Buffer, Buffer, Buffer, Buffer,
                                     Buffer, KParam,
-                                    const float, const unsigned> (eoKernel[device]);
+                                    const float, const unsigned> (*eoKernel[device]);
 
             if (blur_img) {
                 eoOp(EnqueueArgs(getQueue(), global_centroid, local_centroid),

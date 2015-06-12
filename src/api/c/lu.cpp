@@ -35,15 +35,19 @@ static inline void lu(af_array *lower, af_array *upper, af_array *pivot,
 }
 
 template<typename T>
-static inline af_array lu_inplace(af_array in)
+static inline af_array lu_inplace(af_array in, bool is_lapack_piv)
 {
-    return getHandle(lu_inplace<T>(getWritableArray<T>(in)));
+    return getHandle(lu_inplace<T>(getWritableArray<T>(in), !is_lapack_piv));
 }
 
 af_err af_lu(af_array *lower, af_array *upper, af_array *pivot, const af_array in)
 {
     try {
         ArrayInfo i_info = getInfo(in);
+
+        if (i_info.ndims() > 2) {
+            AF_ERROR("lu can not be used in batch mode", AF_ERR_BATCH);
+        }
 
         af_dtype type = i_info.getType();
 
@@ -62,21 +66,26 @@ af_err af_lu(af_array *lower, af_array *upper, af_array *pivot, const af_array i
     return AF_SUCCESS;
 }
 
-af_err af_lu_inplace(af_array *pivot, af_array in)
+af_err af_lu_inplace(af_array *pivot, af_array in, const bool is_lapack_piv)
 {
     try {
+
         ArrayInfo i_info = getInfo(in);
         af_dtype type = i_info.getType();
+
+        if (i_info.ndims() > 2) {
+            AF_ERROR("lu can not be used in batch mode", AF_ERR_BATCH);
+        }
 
         ARG_ASSERT(1, i_info.isFloating()); // Only floating and complex types
 
         af_array out;
 
         switch(type) {
-            case f32: out = lu_inplace<float  >(in);  break;
-            case f64: out = lu_inplace<double >(in);  break;
-            case c32: out = lu_inplace<cfloat >(in);  break;
-            case c64: out = lu_inplace<cdouble>(in);  break;
+            case f32: out = lu_inplace<float  >(in, is_lapack_piv);  break;
+            case f64: out = lu_inplace<double >(in, is_lapack_piv);  break;
+            case c32: out = lu_inplace<cfloat >(in, is_lapack_piv);  break;
+            case c64: out = lu_inplace<cdouble>(in, is_lapack_piv);  break;
             default:  TYPE_ERROR(1, type);
         }
         if(pivot != NULL)
