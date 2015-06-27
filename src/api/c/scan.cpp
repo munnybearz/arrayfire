@@ -64,3 +64,42 @@ af_err af_accum(af_array *out, const af_array in, const int dim)
 
     return AF_SUCCESS;
 }
+
+
+af_err af_highest(af_array *out, const af_array in, const int dim)
+{
+    ARG_ASSERT(2, dim >= 0);
+    ARG_ASSERT(2, dim <  4);
+
+    try {
+
+        const ArrayInfo& in_info = getInfo(in);
+
+        if (dim >= (int)in_info.ndims()) {
+            *out = retain(in);
+            return AF_SUCCESS;
+        }
+
+        af_dtype type = in_info.getType();
+        af_array res;
+
+        switch(type) {
+        case f32:  res = scan<af_max_t, float  , float  >(in, dim); break;
+        case f64:  res = scan<af_max_t, double , double >(in, dim); break;
+        case c32:  res = scan<af_max_t, cfloat , cfloat >(in, dim); break;
+        case c64:  res = scan<af_max_t, cdouble, cdouble>(in, dim); break;
+        case u32:  res = scan<af_max_t, uint   , uint   >(in, dim); break;
+        case s32:  res = scan<af_max_t, int    , int    >(in, dim); break;
+        case u8:   res = scan<af_max_t, uchar  , uint   >(in, dim); break;
+        // Make sure you are adding only "1" for every non zero value, even if op == af_max_t
+        case b8:   res = scan<af_notzero_t, char  , uint   >(in, dim); break;
+        default:
+            TYPE_ERROR(1, type);
+        }
+
+        std::swap(*out, res);
+    }
+    CATCHALL;
+
+    return AF_SUCCESS;
+}
