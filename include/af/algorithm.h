@@ -248,6 +248,17 @@ namespace af
     AFAPI array where(const array &in);
 
     /**
+       C++ Interface for finding the highest value uptil each part of an array
+
+       \param[in] in is the input array
+       \param[in] dim The dimension along which the highest level is evaluated
+       \return the highest level the input has reached
+
+       \ingroup scan_func_highest
+    */
+    AFAPI array highest(const array &in, const int dim = 0);
+
+    /**
        C++ Interface for calculating first order differences in an array
 
        \param[in] in is the input array
@@ -616,6 +627,18 @@ extern "C" {
        \ingroup scan_func_where
     */
     AFAPI af_err af_where(af_array *idx, const af_array in);
+
+    /**
+       C Interface for finding the highest value uptil each part of an array
+
+       \param[out] out is the highest level the input has reached
+       \param[in] in is the input array
+       \param[in] dim The dimension along which the highest level is evaluated
+       \return \ref AF_SUCCESS if the execution completes properly
+
+       \ingroup scan_func_highest
+    */
+    AFAPI af_err af_highest(af_array *out, const af_array in, const int dim);
 
     /**
        C Interface for calculating first order differences in an array

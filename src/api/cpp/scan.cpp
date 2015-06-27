@@ -19,4 +19,11 @@ namespace af
         AF_THROW(af_accum(&out, in.get(), dim));
         return array(out);
     }
+
+    array highest(const array& in, const int dim)
+    {
+        af_array out = 0;
+        AF_THROW(af_highest(&out, in.get(), dim));
+        return array(out);
+    }
 }
