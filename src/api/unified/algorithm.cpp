@@ -25,6 +25,7 @@ ALGO_HAPI_DEF(af_all_true)
 ALGO_HAPI_DEF(af_any_true)
 ALGO_HAPI_DEF(af_count)
 ALGO_HAPI_DEF(af_accum)
+ALGO_HAPI_DEF(af_highest)
 ALGO_HAPI_DEF(af_diff1)
 ALGO_HAPI_DEF(af_diff2)
 
