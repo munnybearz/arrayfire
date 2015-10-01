@@ -15,6 +15,10 @@
 #include <copy.hpp>
 #include <sort.hpp>
 #include <err_opencl.hpp>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include <boost/compute/algorithm/set_intersection.hpp>
 #include <boost/compute/algorithm/set_union.hpp>
 #include <boost/compute/algorithm/sort.hpp>
@@ -147,4 +151,8 @@ namespace opencl
     INSTANTIATE(uint)
     INSTANTIATE(char)
     INSTANTIATE(uchar)
+    INSTANTIATE(short)
+    INSTANTIATE(ushort)
 }
+
+#pragma GCC diagnostic pop

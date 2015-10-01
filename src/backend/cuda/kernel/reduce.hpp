@@ -371,15 +371,14 @@ namespace kernel
     template<typename Ti, typename To, af_op_t op>
     To reduce_all(CParam<Ti> in, bool change_nan, double nanval)
     {
-        int in_elements = in.strides[3] * in.dims[3];
+        int in_elements = in.dims[0] * in.dims[1] * in.dims[2] * in.dims[3];
+        bool is_linear = (in.strides[0] == 1);
+        for (int k = 1; k < 4; k++) {
+            is_linear &= (in.strides[k] == (in.strides[k - 1] * in.dims[k - 1]));
+        }
 
         // FIXME: Use better heuristics to get to the optimum number
-        if (in_elements > 4096) {
-
-            bool is_linear = (in.strides[0] == 1);
-            for (int k = 1; k < 4; k++) {
-                is_linear &= (in.strides[k] == (in.strides[k - 1] * in.dims[k - 1]));
-            }
+        if (in_elements > 4096 || !is_linear) {
 
             if (is_linear) {
                 in.dims[0] = in_elements;

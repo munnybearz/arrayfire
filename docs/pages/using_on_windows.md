@@ -24,7 +24,7 @@ to the location of the executables.
 ## Step 1: Adding ArrayFire to PATH for all users
 
 The ArrayFire installer for Windows creates a user `PATH` variable containing
-`%AF_PATH%/lib`. This is required so that Windows knows where to find the
+`%%AF_PATH%/lib`. This is required so that Windows knows where to find the
 ArrayFire DLLs. This variable fixes the DLL finding only for the user that
 installs ArrayFire.
 
@@ -42,9 +42,9 @@ To allow DLL detection for all users, it needs to be added to the system
 3. Click on _Environment Variables_, then under **System Variables**, find
    `PATH`, and click on it.
 
-4. In edit mode, append `%AF_PATH%/lib`. NOTE: Ensure that there is a semi-colon
-   separating `%AF_PATH%/lib` from any existing content (e.g.
-   `EXISTING_PATHS;%AF_PATH%/lib;`) otherwise other software may not function
+4. In edit mode, append `%%AF_PATH%/lib`. NOTE: Ensure that there is a semi-colon
+   separating `%%AF_PATH%/lib` from any existing content (e.g.
+   `EXISTING_PATHS;%%AF_PATH%/lib;`) otherwise other software may not function
    correctly.
 
 ## Step 2: Verify the path addition functions correctly
@@ -53,8 +53,8 @@ To allow DLL detection for all users, it needs to be added to the system
    `AF_PATH/examples/helloworld/helloworld.sln`.
 2. Build and run the `helloworld` example. Be sure to, select the
    platform/configuration of your choice using the platform drop-down
-   (the options are CPU, CUDA, and OpenCL) and Solution Configuration drop down
-   (options of Release and Debug) menus.
+   (the options are CPU, CUDA, OpenCL, and Unified) and Solution Configuration
+   drop down (options of Release and Debug) menus.
 3. Run the `helloworld` example
 
 ## Step 3: Creating your own Visual Studio Project
@@ -96,10 +96,10 @@ different:
    _Project Properties -> Build Events -> Post Build Events_
    dialog:
 
-     ```
-     echo copy "$(CUDA_PATH)\nvvm\bin\nvvm64*.dll" "$(OutDir)"
-     copy "$(CUDA_PATH)\nvvm\bin\nvvm64*.dll" "$(OutDir)"
-     ```
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.c}
+echo copy "$(CUDA_PATH)\nvvm\bin\nvvm64*.dll" "$(OutDir)"
+copy "$(CUDA_PATH)\nvvm\bin\nvvm64*.dll" "$(OutDir)"
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 4. Ensure that you use x64 based configurations.
 

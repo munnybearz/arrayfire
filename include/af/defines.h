@@ -50,10 +50,19 @@
     typedef long long   dim_t;
 #endif
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86) || defined(_WIN64)
+#define USE_CPUID
+#endif
+
 #include <stdlib.h>
 
 typedef long long intl;
 typedef unsigned long long uintl;
+
+#include <af/version.h>
+#ifndef AF_API_VERSION
+#define AF_API_VERSION AF_API_VERSION_CURRENT
+#endif
 
 typedef enum {
     ///
@@ -122,6 +131,12 @@ typedef enum {
     /// This build of ArrayFire does not support this feature
     ///
     AF_ERR_NOT_CONFIGURED = 302,
+
+    ///
+    /// This build of ArrayFire is not compiled with "nonfree" algorithms
+    ///
+    AFF_ERR_NONFREE       = 303,
+
     // 400-499 Errors for missing hardware features
 
     ///
@@ -134,6 +149,11 @@ typedef enum {
     /// not support graphics
     ///
     AF_ERR_NO_GFX         = 402,
+
+    // 500-599 Errors specific to heterogenous API
+    AF_ERR_LOAD_LIB       = 501,
+    AF_ERR_LOAD_SYM       = 502,
+
     // 900-999 Errors from upstream libraries and runtimes
 
     ///
@@ -153,12 +173,16 @@ typedef enum {
     c32,    ///< 32-bit complex floating point values
     f64,    ///< 64-bit complex floating point values
     c64,    ///< 64-bit complex floating point values
-    b8,     ///< 8-bit boolean values
+    b8 ,    ///< 8-bit boolean values
     s32,    ///< 32-bit signed integral values
     u32,    ///< 32-bit unsigned integral values
-    u8,     ///< 8-bit unsigned integral values
+    u8 ,    ///< 8-bit unsigned integral values
     s64,    ///< 64-bit signed integral values
-    u64     ///< 64-bit unsigned integral values
+    u64,    ///< 64-bit unsigned integral values
+#if AF_API_VERSION >= 32
+    s16,    ///< 16-bit signed integral values
+    u16,    ///< 16-bit unsigned integral values
+#endif
 } af_dtype;
 
 typedef enum {
@@ -235,9 +259,16 @@ typedef enum {
 } af_match_type;
 
 typedef enum {
+    AF_YCC_601 = 601,  ///< ITU-R BT.601 (formerly CCIR 601) standard
+    AF_YCC_709 = 709,  ///< ITU-R BT.709 standard
+    AF_YCC_2020 = 2020  ///< ITU-R BT.2020 standard
+} af_ycc_std;
+
+typedef enum {
     AF_GRAY = 0, ///< Grayscale
     AF_RGB,      ///< 3-channel RGB
-    AF_HSV       ///< 3-channel HSV
+    AF_HSV,      ///< 3-channel HSV
+    AF_YCbCr     ///< 3-channel YCbCr
 } af_cspace_t;
 
 typedef enum {
@@ -278,6 +309,29 @@ typedef enum {
     AF_COLORMAP_BLUE    = 6     ///< Blue hue map
 } af_colormap;
 
+typedef enum {
+    AF_FIF_BMP          = 0,    ///< FreeImage Enum for Bitmap File
+    AF_FIF_ICO          = 1,    ///< FreeImage Enum for Windows Icon File
+    AF_FIF_JPEG         = 2,    ///< FreeImage Enum for JPEG File
+    AF_FIF_JNG          = 3,    ///< FreeImage Enum for JPEG Network Graphics File
+    AF_FIF_PNG          = 13,   ///< FreeImage Enum for Portable Network Graphics File
+    AF_FIF_PPM          = 14,   ///< FreeImage Enum for Portable Pixelmap (ASCII) File
+    AF_FIF_PPMRAW       = 15,   ///< FreeImage Enum for Portable Pixelmap (Binary) File
+    AF_FIF_TIFF         = 18,   ///< FreeImage Enum for Tagged Image File Format File
+    AF_FIF_PSD          = 20,   ///< FreeImage Enum for Adobe Photoshop File
+    AF_FIF_HDR          = 26,   ///< FreeImage Enum for High Dynamic Range File
+    AF_FIF_EXR          = 29,   ///< FreeImage Enum for ILM OpenEXR File
+    AF_FIF_JP2          = 31,   ///< FreeImage Enum for JPEG-2000 File
+    AF_FIF_RAW          = 34    ///< FreeImage Enum for RAW Camera Image File
+} af_image_format;
+
+typedef enum {
+    AF_BACKEND_DEFAULT = 0,  ///< Default backend order: OpenCL -> CUDA -> CPU
+    AF_BACKEND_CPU     = 1,  ///< CPU a.k.a sequential algorithms
+    AF_BACKEND_CUDA    = 2,  ///< CUDA Compute Backend
+    AF_BACKEND_OPENCL  = 3,  ///< OpenCL Compute Backend
+} af_backend;
+
 // Below enum is purely added for example purposes
 // it doesn't and shoudn't be used anywhere in the
 // code. No Guarantee's provided if it is used.
@@ -302,6 +356,9 @@ namespace af
     typedef af_mat_prop matProp;
     typedef af_colormap ColorMap;
     typedef af_norm_type normType;
+    typedef af_ycc_std YCCStd;
+    typedef af_image_format imageFormat;
+    typedef af_backend Backend;
 }
 
 #endif

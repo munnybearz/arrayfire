@@ -126,7 +126,7 @@ public:
     vector<af_seq> span_seqs;
 };
 
-typedef ::testing::Types<float, double, af::cfloat, af::cdouble, int, unsigned, unsigned char, intl, uintl> AllTypes;
+typedef ::testing::Types<float, double, af::cfloat, af::cdouble, int, unsigned, unsigned char, intl, uintl, short, ushort> AllTypes;
 TYPED_TEST_CASE(Indexing1D, AllTypes);
 
 TYPED_TEST(Indexing1D, Continious)          { DimCheck<TypeParam>(this->continuous_seqs);           }
@@ -549,7 +549,7 @@ class lookup : public ::testing::Test
         }
 };
 
-typedef ::testing::Types<float, double, int, unsigned, unsigned char> ArrIdxTestTypes;
+typedef ::testing::Types<float, double, int, unsigned, unsigned char, short, ushort> ArrIdxTestTypes;
 TYPED_TEST_CASE(lookup, ArrIdxTestTypes);
 
 template<typename T>
@@ -1260,4 +1260,112 @@ TEST(Indexing, SNIPPET_indexing_copy)
   // At exit both A and s1 will be destroyed
   // but the underlying array should only be
   // freed once.
+}
+
+TEST(Asssign, LinearIndexSeq)
+{
+    using af::array;
+    const int nx = 5;
+    const int ny = 4;
+
+    const int st = nx - 2;
+    const int en = nx * (ny - 1);
+    const int num = (en - st + 1);
+
+    array a = af::randu(nx, ny);
+    af::index idx = af::seq(st, en);
+
+    af_array in_arr = a.get();
+    af_index_t ii = idx.get();
+    af_array out_arr;
+
+    ASSERT_EQ(AF_SUCCESS,
+              af_index(&out_arr, in_arr, 1, &ii.idx.seq));
+
+    af::array out(out_arr);
+
+    ASSERT_EQ(out.dims(0), num);
+    ASSERT_EQ(out.elements(), num);
+
+    std::vector<float> hout(nx * ny);
+    std::vector<float> ha(nx * ny);
+
+    a.host(&ha[0]);
+    out.host(&hout[0]);
+
+    for (int i = 0; i < num; i++) {
+        ASSERT_EQ(ha[i + st], hout[i]);
+    }
+}
+
+TEST(Asssign, LinearIndexGenSeq)
+{
+    using af::array;
+    const int nx = 5;
+    const int ny = 4;
+
+    const int st = nx - 2;
+    const int en = nx * (ny - 1);
+    const int num = (en - st + 1);
+
+    array a = af::randu(nx, ny);
+    af::index idx = af::seq(st, en);
+
+    af_array in_arr = a.get();
+    af_index_t ii = idx.get();
+    af_array out_arr;
+
+    ASSERT_EQ(AF_SUCCESS,
+              af_index_gen(&out_arr, in_arr, 1, &ii));
+
+    af::array out(out_arr);
+
+    ASSERT_EQ(out.dims(0), num);
+    ASSERT_EQ(out.elements(), num);
+
+    std::vector<float> hout(nx * ny);
+    std::vector<float> ha(nx * ny);
+
+    a.host(&ha[0]);
+    out.host(&hout[0]);
+
+    for (int i = 0; i < num; i++) {
+        ASSERT_EQ(ha[i + st], hout[i]);
+    }
+}
+
+TEST(Asssign, LinearIndexGenArr)
+{
+    using af::array;
+    const int nx = 5;
+    const int ny = 4;
+
+    const int st = nx - 2;
+    const int en = nx * (ny - 1);
+    const int num = (en - st + 1);
+
+    array a = af::randu(nx, ny);
+    af::index idx = af::array(af::seq(st, en));
+
+    af_array in_arr = a.get();
+    af_index_t ii = idx.get();
+    af_array out_arr;
+
+    ASSERT_EQ(AF_SUCCESS,
+              af_index_gen(&out_arr, in_arr, 1, &ii));
+
+    af::array out(out_arr);
+
+    ASSERT_EQ(out.dims(0), num);
+    ASSERT_EQ(out.elements(), num);
+
+    std::vector<float> hout(nx * ny);
+    std::vector<float> ha(nx * ny);
+
+    a.host(&ha[0]);
+    out.host(&hout[0]);
+
+    for (int i = 0; i < num; i++) {
+        ASSERT_EQ(ha[i + st], hout[i]);
+    }
 }

@@ -28,6 +28,7 @@ namespace af
     */
     AFAPI array sum(const array &in, const int dim = -1);
 
+#if AF_API_VERSION >= 31
     /**
        C++ Interface for sum of elements in an array while replacing nan values
 
@@ -40,6 +41,7 @@ namespace af
 
     */
     AFAPI array sum(const array &in, const int dim, const double nanval);
+#endif
 
     /**
        C++ Interface for product of elements in an array
@@ -54,6 +56,7 @@ namespace af
     */
     AFAPI array product(const array &in, const int dim = -1);
 
+#if AF_API_VERSION >= 31
     /**
        C++ Interface for product of elements in an array while replacing nan values
 
@@ -66,7 +69,7 @@ namespace af
 
     */
     AFAPI array product(const array &in, const int dim, const double nanval);
-
+#endif
 
     /**
        C++ Interface for minimum values in an array
@@ -148,6 +151,7 @@ namespace af
     */
     template<typename T> T sum(const array &in);
 
+#if AF_API_VERSION >= 31
     /**
        C++ Interface for sum of all elements in an array while replacing nan values
 
@@ -158,6 +162,7 @@ namespace af
        \ingroup reduce_func_sum
     */
     template<typename T> T sum(const array &in, double nanval);
+#endif
 
     /**
        C++ Interface for product of all elements in an array
@@ -169,6 +174,7 @@ namespace af
     */
     template<typename T> T product(const array &in);
 
+#if AF_API_VERSION >= 31
     /**
        C++ Interface for product of all elements in an array while replacing nan values
 
@@ -179,6 +185,7 @@ namespace af
        \ingroup reduce_func_product
     */
     template<typename T> T product(const array &in, double nanval);
+#endif
 
     /**
        C++ Interface for getting minimum value of an array
@@ -451,6 +458,7 @@ extern "C" {
     */
     AFAPI af_err af_sum(af_array *out, const af_array in, const int dim);
 
+#if AF_API_VERSION >= 31
     /**
        C Interface for sum of elements in an array while replacing nans
 
@@ -463,6 +471,7 @@ extern "C" {
        \ingroup reduce_func_sum
     */
     AFAPI af_err af_sum_nan(af_array *out, const af_array in, const int dim, const double nanval);
+#endif
 
     /**
        C Interface for product of elements in an array
@@ -476,6 +485,7 @@ extern "C" {
     */
     AFAPI af_err af_product(af_array *out, const af_array in, const int dim);
 
+#if AF_API_VERSION >= 31
     /**
        C Interface for product of elements in an array while replacing nans
 
@@ -488,6 +498,7 @@ extern "C" {
        \ingroup reduce_func_product
     */
     AFAPI af_err af_product_nan(af_array *out, const af_array in, const int dim, const double nanval);
+#endif
 
     /**
        C Interface for minimum values in an array
@@ -563,6 +574,7 @@ extern "C" {
     */
     AFAPI af_err af_sum_all(double *real, double *imag, const af_array in);
 
+#if AF_API_VERSION >= 31
     /**
        C Interface for sum of all elements in an array while replacing nans
 
@@ -577,6 +589,7 @@ extern "C" {
        \ingroup reduce_func_sum
     */
     AFAPI af_err af_sum_nan_all(double *real, double *imag, const af_array in, const double nanval);
+#endif
 
     /**
        C Interface for product of all elements in an array
@@ -592,6 +605,7 @@ extern "C" {
     */
     AFAPI af_err af_product_all(double *real, double *imag, const af_array in);
 
+#if AF_API_VERSION >= 31
     /**
        C Interface for product of all elements in an array while replacing nans
 
@@ -606,6 +620,7 @@ extern "C" {
        \ingroup reduce_func_product
     */
     AFAPI af_err af_product_nan_all(double *real, double *imag, const af_array in, const double nanval);
+#endif
 
     /**
        C Interface for getting minimum value of an array
