@@ -7,133 +7,101 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
+#include <complex>
+
 #include <blas.hpp>
-#include <af/blas.h>
 #include <Array.hpp>
-#include <clBLAS.h>
-#include <cassert>
-#include <string>
-#include <iostream>
-#include <functional>
-#include <stdexcept>
-#include <mutex>
+#include <err_opencl.hpp>
 #include <math.hpp>
+#include <transpose.hpp>
+#include <arith.hpp>
+#include <reduce.hpp>
+#include <complex.hpp>
+
+// Includes one of the supported OpenCL BLAS back-ends (e.g. clBLAS, CLBlast)
+#include <magma/magma_blas.h>
+
+#if defined(WITH_LINEAR_ALGEBRA)
+#include <cpu/cpu_blas.hpp>
+#endif
 
 namespace opencl
 {
 
-using std::is_floating_point;
-using std::enable_if;
-using std::once_flag;
-using std::call_once;
-using std::runtime_error;
-using std::to_string;
-
-clblasTranspose
-toClblasTranspose(af_blas_transpose opt)
+void initBlas()
 {
-    clblasTranspose out = clblasNoTrans;
-    switch(opt) {
-        case AF_NO_TRANSPOSE        : out = clblasNoTrans;   break;
-        case AF_TRANSPOSE           : out = clblasTrans;     break;
-        case AF_CONJUGATE_TRANSPOSE : out = clblasConjTrans; break;
-        default                     : assert( "INVALID af_blas_transpose" && 1!=1);
-    }
-    return out;
+    gpu_blas_init();
 }
 
-#define BLAS_FUNC_DEF(NAME)                                             \
-template<typename T>                                                    \
-struct NAME##_func;
+void deInitBlas()
+{
+    gpu_blas_deinit();
+}
 
-#define BLAS_FUNC(NAME, TYPE, PREFIX)                                   \
-template<>                                                              \
-struct NAME##_func<TYPE>                                                \
-{                                                                       \
-    template<typename... Args>                                          \
-    clblasStatus                                                        \
-    operator() (Args... args) { return clblas##PREFIX##NAME(args...); } \
-};
-
-BLAS_FUNC_DEF(gemm)
-BLAS_FUNC(gemm, float,      S)
-BLAS_FUNC(gemm, double,     D)
-BLAS_FUNC(gemm, cfloat,     C)
-BLAS_FUNC(gemm, cdouble,    Z)
-
-BLAS_FUNC_DEF(gemv)
-BLAS_FUNC(gemv, float,      S)
-BLAS_FUNC(gemv, double,     D)
-BLAS_FUNC(gemv, cfloat,     C)
-BLAS_FUNC(gemv, cdouble,    Z)
-
-BLAS_FUNC_DEF( dot )
-BLAS_FUNC(dot, float,       S)
-BLAS_FUNC(dot, double,      D)
-
-#undef BLAS_FUNC_DEF
-#undef BLAS_FUNC
-
-static void
-initBlas() {
-    static std::once_flag clblasSetupFlag;
-    call_once(clblasSetupFlag, clblasSetup);
+// Converts an af_mat_prop options to a transpose type for one of the OpenCL BLAS back-ends
+OPENCL_BLAS_TRANS_T
+toBlasTranspose(af_mat_prop opt)
+{
+    switch(opt) {
+        case AF_MAT_NONE    : return OPENCL_BLAS_NO_TRANS;
+        case AF_MAT_TRANS   : return OPENCL_BLAS_TRANS;
+        case AF_MAT_CTRANS  : return OPENCL_BLAS_CONJ_TRANS;
+        default             : AF_ERROR("INVALID af_mat_prop", AF_ERR_ARG);
+    }
 }
 
 template<typename T>
 Array<T> matmul(const Array<T> &lhs, const Array<T> &rhs,
-                af_blas_transpose optLhs, af_blas_transpose optRhs)
+                af_mat_prop optLhs, af_mat_prop optRhs)
 {
-    initBlas();
-    clblasTranspose lOpts = toClblasTranspose(optLhs);
-    clblasTranspose rOpts = toClblasTranspose(optRhs);
+#if defined(WITH_LINEAR_ALGEBRA)
+    if(OpenCLCPUOffload(false)) {   // Do not force offload gemm on OSX Intel devices
+        return cpu::matmul(lhs, rhs, optLhs, optRhs);
+    }
+#endif
+    const auto lOpts = toBlasTranspose(optLhs);
+    const auto rOpts = toBlasTranspose(optRhs);
 
-    int aRowDim = (lOpts == clblasNoTrans) ? 0 : 1;
-    int aColDim = (lOpts == clblasNoTrans) ? 1 : 0;
-    int bColDim = (rOpts == clblasNoTrans) ? 1 : 0;
+    const auto aRowDim = (lOpts == OPENCL_BLAS_NO_TRANS) ? 0 : 1;
+    const auto aColDim = (lOpts == OPENCL_BLAS_NO_TRANS) ? 1 : 0;
+    const auto bColDim = (rOpts == OPENCL_BLAS_NO_TRANS) ? 1 : 0;
 
-    dim4 lDims = lhs.dims();
-    dim4 rDims = rhs.dims();
-    int M = lDims[aRowDim];
-    int N = rDims[bColDim];
-    int K = lDims[aColDim];
+    const dim4 lDims = lhs.dims();
+    const dim4 rDims = rhs.dims();
+    const int M = lDims[aRowDim];
+    const int N = rDims[bColDim];
+    const int K = lDims[aColDim];
 
-    //FIXME: Leaks on errors.
     Array<T> out = createEmptyArray<T>(af::dim4(M, N, 1, 1));
-    auto alpha = scalar<T>(1);
-    auto beta  = scalar<T>(0);
+    const auto alpha = scalar<T>(1);
+    const auto beta  = scalar<T>(0);
 
-    dim4 lStrides = lhs.strides();
-    dim4 rStrides = rhs.strides();
-    clblasStatus err;
+    const dim4 lStrides = lhs.strides();
+    const dim4 rStrides = rhs.strides();
     cl::Event event;
     if(rDims[bColDim] == 1) {
-        N = lDims[aColDim];
-        gemv_func<T> gemv;
-        err = gemv(
-            clblasColumnMajor, lOpts,
-            lDims[0], lDims[1],
-            alpha,
-            (*lhs.get())(),    lhs.getOffset(),   lStrides[1],
-            (*rhs.get())(),    rhs.getOffset(),   rStrides[0],
-            beta ,
-            (*out.get())(),   out.getOffset(),             1,
-            1, &getQueue()(), 0, nullptr, &event());
+        dim_t incr = (rOpts == OPENCL_BLAS_NO_TRANS) ? rStrides[0] : rStrides[1];
+        gpu_blas_gemv_func<T> gemv;
+        OPENCL_BLAS_CHECK(
+            gemv(lOpts, lDims[0], lDims[1],
+                 alpha,
+                 (*lhs.get())(), lhs.getOffset(), lStrides[1],
+                 (*rhs.get())(), rhs.getOffset(), incr,
+                 beta,
+                 (*out.get())(), out.getOffset(), 1,
+                 1, &getQueue()(), 0, nullptr, &event())
+        );
     } else {
-        gemm_func<T> gemm;
-        err = gemm(
-                clblasColumnMajor, lOpts, rOpts,
-                M, N, K,
-                alpha,
-                (*lhs.get())(),    lhs.getOffset(),   lStrides[1],
-                (*rhs.get())(),    rhs.getOffset(),   rStrides[1],
-                beta,
-                (*out.get())(),   out.getOffset(),  out.dims()[0],
-                1, &getQueue()(), 0, nullptr, &event());
-
-    }
-    if(err) {
-        throw runtime_error(std::string("CLBLAS error: ") + std::to_string(err));
+        gpu_blas_gemm_func<T> gemm;
+        OPENCL_BLAS_CHECK(
+            gemm(lOpts, rOpts, M, N, K,
+                 alpha,
+                 (*lhs.get())(), lhs.getOffset(), lStrides[1],
+                 (*rhs.get())(), rhs.getOffset(), rStrides[1],
+                 beta,
+                 (*out.get())(), out.getOffset(), out.dims()[0],
+                 1, &getQueue()(), 0, nullptr, &event())
+        );
     }
 
     return out;
@@ -141,32 +109,18 @@ Array<T> matmul(const Array<T> &lhs, const Array<T> &rhs,
 
 template<typename T>
 Array<T> dot(const Array<T> &lhs, const Array<T> &rhs,
-             af_blas_transpose optLhs, af_blas_transpose optRhs)
+             af_mat_prop optLhs, af_mat_prop optRhs)
 {
-    initBlas();
+    const Array<T> lhs_ = (optLhs == AF_MAT_NONE ? lhs : conj<T>(lhs));
+    const Array<T> rhs_ = (optRhs == AF_MAT_NONE ? rhs : conj<T>(rhs));
 
-    int N = lhs.dims()[0];
-    dot_func<T> dot;
-    cl::Event event;
-    auto out = createEmptyArray<T>(af::dim4(1));
-    cl::Buffer scratch(getContext(), CL_MEM_READ_WRITE, sizeof(T) * N);
-    clblasStatus err;
-    err = dot(N,
-              (*out.get())(), out.getOffset(),
-              (*lhs.get())(),  lhs.getOffset(), lhs.strides()[0],
-              (*rhs.get())(),  rhs.getOffset(), rhs.strides()[0],
-              scratch(),
-              1, &getQueue()(), 0, nullptr, &event());
-
-    if(err) {
-        throw runtime_error(std::string("CLBLAS error: ") + std::to_string(err));
-    }
-    return out;
+    const Array<T> temp = arithOp<T, af_mul_t>(lhs_, rhs_, lhs_.dims());
+    return reduce<af_add_t, T, T>(temp, 0, false, 0);
 }
 
 #define INSTANTIATE_BLAS(TYPE)                                                          \
-    template Array<TYPE> matmul<TYPE>(const Array<TYPE> &lhs, const Array<TYPE> &rhs,  \
-                    af_blas_transpose optLhs, af_blas_transpose optRhs);
+    template Array<TYPE> matmul<TYPE>(const Array<TYPE> &lhs, const Array<TYPE> &rhs,   \
+                    af_mat_prop optLhs, af_mat_prop optRhs);
 
 INSTANTIATE_BLAS(float)
 INSTANTIATE_BLAS(cfloat)
@@ -174,13 +128,12 @@ INSTANTIATE_BLAS(double)
 INSTANTIATE_BLAS(cdouble)
 
 #define INSTANTIATE_DOT(TYPE)                                                       \
-    template Array<TYPE> dot<TYPE>(const Array<TYPE> &lhs, const Array<TYPE> &rhs, \
-                                   af_blas_transpose optLhs, af_blas_transpose optRhs);
-
-template<typename T>
-Array<T> dot(const Array<T> &lhs, const Array<T> &rhs,
-              af_blas_transpose optLhs, af_blas_transpose optRhs);
+    template Array<TYPE> dot<TYPE>(const Array<TYPE> &lhs, const Array<TYPE> &rhs,  \
+                                   af_mat_prop optLhs, af_mat_prop optRhs);
 
 INSTANTIATE_DOT(float)
 INSTANTIATE_DOT(double)
+INSTANTIATE_DOT(cfloat)
+INSTANTIATE_DOT(cdouble)
+
 }

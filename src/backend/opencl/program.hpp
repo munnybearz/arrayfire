@@ -8,17 +8,35 @@
  ********************************************************/
 
 #pragma once
-#include <cl.hpp>
-#include <string>
-#include <mutex>
+#include <platform.hpp>
+#include <common/util.hpp>
 
-using cl::Buffer;
-using cl::Program;
-using cl::Kernel;
-using cl::make_kernel;
-using cl::EnqueueArgs;
-using cl::NDRange;
-using std::string;
+#include <cstdio>
+#include <string>
+
+#define SHOW_DEBUG_BUILD_INFO(PROG) do {                                \
+        cl_uint numDevices = PROG.getInfo<CL_PROGRAM_NUM_DEVICES>();    \
+        for (unsigned int i = 0; i<numDevices; ++i) {                   \
+          printf("%s\n", PROG.getBuildInfo<CL_PROGRAM_BUILD_LOG>(       \
+                      PROG.getInfo<CL_PROGRAM_DEVICES>()[i]).c_str());  \
+          printf("%s\n", PROG.getBuildInfo<CL_PROGRAM_BUILD_OPTIONS>(   \
+                      PROG.getInfo<CL_PROGRAM_DEVICES>()[i]).c_str());  \
+        }                                                               \
+    } while(0)                                                          \
+
+
+#if defined(NDEBUG)
+
+#define SHOW_BUILD_INFO(PROG) do {                                  \
+        std::string info = getEnvVar("AF_OPENCL_SHOW_BUILD_INFO");  \
+        if (!info.empty() && info != "0") {                         \
+            SHOW_DEBUG_BUILD_INFO(prog);                            \
+        }                                                           \
+    } while(0)
+
+#else
+#define SHOW_BUILD_INFO(PROG) SHOW_DEBUG_BUILD_INFO(PROG)
+#endif
 
 namespace opencl
 {

@@ -27,7 +27,7 @@ namespace cuda
         }
 
         if(_seq_dim < 0 || _seq_dim > 3)
-            AF_ERROR("Invalid rep selection", AF_ERR_INVALID_ARG);
+            AF_ERROR("Invalid rep selection", AF_ERR_ARG);
 
         Array<T> out = createEmptyArray<T>(dim);
         kernel::range<T>(out, _seq_dim);
@@ -42,5 +42,9 @@ namespace cuda
     INSTANTIATE(double)
     INSTANTIATE(int)
     INSTANTIATE(uint)
+    INSTANTIATE(intl)
+    INSTANTIATE(uintl)
     INSTANTIATE(uchar)
+    INSTANTIATE(short)
+    INSTANTIATE(ushort)
 }

@@ -16,37 +16,47 @@
 namespace af
 {
 
-#define INSTANTIATE(cppfunc, cfunc)                     \
-    array cppfunc(const array &lhs, const array &rhs)   \
-    {                                                   \
-        af_array out = 0;                               \
-        cfunc(&out, lhs.get(), rhs.get(), gforGet());   \
-        return array(out);                              \
+#define INSTANTIATE(cppfunc, cfunc)                             \
+    array cppfunc(const array &lhs, const array &rhs)           \
+    {                                                           \
+        af_array out = 0;                                       \
+        AF_THROW(cfunc(&out, lhs.get(), rhs.get(), gforGet())); \
+        return array(out);                                      \
     }
 
-    INSTANTIATE(min, af_minof)
-    INSTANTIATE(max, af_maxof)
-    INSTANTIATE(pow, af_pow  )
-    INSTANTIATE(rem, af_rem  )
-    INSTANTIATE(mod, af_mod  )
+    INSTANTIATE(min , af_minof)
+    INSTANTIATE(max , af_maxof)
+    INSTANTIATE(pow , af_pow  )
+    INSTANTIATE(root, af_root )
+    INSTANTIATE(rem , af_rem  )
+    INSTANTIATE(mod , af_mod  )
 
     INSTANTIATE(complex, af_cplx2)
     INSTANTIATE(atan2, af_atan2)
     INSTANTIATE(hypot, af_hypot)
 
-#define WRAPPER(func)                                                   \
-    array func(const array &lhs, const double rhs)                      \
-    {                                                                   \
-        return func(lhs, constant(rhs, lhs.dims(), lhs.type()));        \
-    }                                                                   \
-    array func(const double lhs, const array &rhs)                      \
-    {                                                                   \
-        return func(constant(lhs, rhs.dims(), rhs.type()), rhs);        \
+#define WRAPPER(func)                                       \
+    array func(const array &lhs, const double rhs)          \
+    {                                                       \
+        af::dtype ty = lhs.type();                          \
+        if (lhs.iscomplex()) {                              \
+            ty = lhs.issingle() ? f32 : f64;                \
+        }                                                   \
+        return func(lhs, constant(rhs, lhs.dims(), ty));    \
+    }                                                       \
+    array func(const double lhs, const array &rhs)          \
+    {                                                       \
+        af::dtype ty = rhs.type();                          \
+        if (rhs.iscomplex()) {                              \
+            ty = rhs.issingle() ? f32 : f64;                \
+        }                                                   \
+        return func(constant(lhs, rhs.dims(), ty), rhs);    \
     }
 
     WRAPPER(min)
     WRAPPER(max)
     WRAPPER(pow)
+    WRAPPER(root)
     WRAPPER(rem)
     WRAPPER(mod)
     WRAPPER(complex)

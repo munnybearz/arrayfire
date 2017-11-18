@@ -7,9 +7,6 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <iostream>
-#include <af/array.h>
-#include <af/defines.h>
 #include <Array.hpp>
 #include <copy.hpp>
 #include <kernel/memcopy.hpp>
@@ -26,11 +23,11 @@ namespace opencl
         // FIXME: Merge this with copyArray
         A.eval();
 
-        dim_type offset = 0;
+        dim_t offset = 0;
         cl::Buffer buf;
         Array<T> out = A;
 
-        if (A.isOwner() || // No offsets, No strides
+        if (A.isLinear() || // No offsets, No strides
             A.ndims() == 1 // Simple offset, no strides.
             ) {
             buf = *A.get();
@@ -54,7 +51,7 @@ namespace opencl
     Array<T> copyArray(const Array<T> &A)
     {
         Array<T> out = createEmptyArray<T>(A.dims());
-        dim_type offset = A.getOffset();
+        dim_t offset = A.getOffset();
 
         if (A.isLinear()) {
             // FIXME: Add checks
@@ -80,6 +77,12 @@ namespace opencl
         return ret;
     }
 
+    template<typename T>
+    void multiply_inplace(Array<T> &in, double val)
+    {
+        kernel::copy<T, T, true>(in, in, in.ndims(), scalar<T>(0), val);
+    }
+
     template<typename inType, typename outType>
     struct copyWrapper {
         void operator()(Array<outType> &out, Array<inType> const &in)
@@ -99,8 +102,8 @@ namespace opencl
                 in.isLinear() &&
                 out.elements() == in.elements())
             {
-                dim_type in_offset = in.getOffset() * sizeof(T);
-                dim_type out_offset = out.getOffset() * sizeof(T);
+                dim_t in_offset = in.getOffset() * sizeof(T);
+                dim_t out_offset = out.getOffset() * sizeof(T);
 
                 getQueue().enqueueCopyBuffer(*in.get(), *out.get(),
                                              in_offset, out_offset,
@@ -124,6 +127,7 @@ namespace opencl
 #define INSTANTIATE(T)                                              \
     template void      copyData<T> (T *data, const Array<T> &from); \
     template Array<T>  copyArray<T>(const Array<T> &A);             \
+    template void      multiply_inplace<T> (Array<T> &in, double norm); \
 
     INSTANTIATE(float)
     INSTANTIATE(double)
@@ -135,6 +139,8 @@ namespace opencl
     INSTANTIATE(char)
     INSTANTIATE(intl)
     INSTANTIATE(uintl)
+    INSTANTIATE(short)
+    INSTANTIATE(ushort)
 
     #define INSTANTIATE_PAD_ARRAY(SRC_T)                                    \
     template Array<float  > padArray<SRC_T, float  >(Array<SRC_T> const &src, dim4 const &dims, float   default_value, double factor); \
@@ -143,6 +149,10 @@ namespace opencl
     template Array<cdouble> padArray<SRC_T, cdouble>(Array<SRC_T> const &src, dim4 const &dims, cdouble default_value, double factor); \
     template Array<int    > padArray<SRC_T, int    >(Array<SRC_T> const &src, dim4 const &dims, int     default_value, double factor); \
     template Array<uint   > padArray<SRC_T, uint   >(Array<SRC_T> const &src, dim4 const &dims, uint    default_value, double factor); \
+    template Array<intl   > padArray<SRC_T, intl   >(Array<SRC_T> const &src, dim4 const &dims, intl    default_value, double factor); \
+    template Array<uintl  > padArray<SRC_T, uintl  >(Array<SRC_T> const &src, dim4 const &dims, uintl   default_value, double factor); \
+    template Array<short  > padArray<SRC_T, short  >(Array<SRC_T> const &src, dim4 const &dims, short   default_value, double factor); \
+    template Array<ushort > padArray<SRC_T, ushort >(Array<SRC_T> const &src, dim4 const &dims, ushort  default_value, double factor); \
     template Array<uchar  > padArray<SRC_T, uchar  >(Array<SRC_T> const &src, dim4 const &dims, uchar   default_value, double factor); \
     template Array<char   > padArray<SRC_T, char   >(Array<SRC_T> const &src, dim4 const &dims, char    default_value, double factor); \
     template void copyArray<SRC_T, float  >(Array<float  > &dst, Array<SRC_T> const &src); \
@@ -151,6 +161,10 @@ namespace opencl
     template void copyArray<SRC_T, cdouble>(Array<cdouble> &dst, Array<SRC_T> const &src); \
     template void copyArray<SRC_T, int    >(Array<int    > &dst, Array<SRC_T> const &src); \
     template void copyArray<SRC_T, uint   >(Array<uint   > &dst, Array<SRC_T> const &src); \
+    template void copyArray<SRC_T, intl   >(Array<intl   > &dst, Array<SRC_T> const &src); \
+    template void copyArray<SRC_T, uintl  >(Array<uintl  > &dst, Array<SRC_T> const &src); \
+    template void copyArray<SRC_T, short  >(Array<short  > &dst, Array<SRC_T> const &src); \
+    template void copyArray<SRC_T, ushort >(Array<ushort > &dst, Array<SRC_T> const &src); \
     template void copyArray<SRC_T, uchar  >(Array<uchar  > &dst, Array<SRC_T> const &src); \
     template void copyArray<SRC_T, char   >(Array<char   > &dst, Array<SRC_T> const &src);
 
@@ -158,8 +172,12 @@ namespace opencl
     INSTANTIATE_PAD_ARRAY(double)
     INSTANTIATE_PAD_ARRAY(int   )
     INSTANTIATE_PAD_ARRAY(uint  )
+    INSTANTIATE_PAD_ARRAY(intl  )
+    INSTANTIATE_PAD_ARRAY(uintl )
     INSTANTIATE_PAD_ARRAY(uchar )
     INSTANTIATE_PAD_ARRAY(char  )
+    INSTANTIATE_PAD_ARRAY(short )
+    INSTANTIATE_PAD_ARRAY(ushort)
 
 #define INSTANTIATE_PAD_ARRAY_COMPLEX(SRC_T)                            \
     template Array<cfloat > padArray<SRC_T, cfloat >(Array<SRC_T> const &src, dim4 const &dims, cfloat  default_value, double factor); \
@@ -170,5 +188,54 @@ namespace opencl
     INSTANTIATE_PAD_ARRAY_COMPLEX(cfloat )
     INSTANTIATE_PAD_ARRAY_COMPLEX(cdouble)
 
+#define SPECILIAZE_UNUSED_COPYARRAY(SRC_T, DST_T) \
+    template<> void copyArray<SRC_T, DST_T>(Array<DST_T> &out, Array<SRC_T> const &in) \
+    {\
+        OPENCL_NOT_SUPPORTED();\
+    }
 
+    SPECILIAZE_UNUSED_COPYARRAY(cfloat, double)
+    SPECILIAZE_UNUSED_COPYARRAY(cfloat, float)
+    SPECILIAZE_UNUSED_COPYARRAY(cfloat, uchar)
+    SPECILIAZE_UNUSED_COPYARRAY(cfloat, char)
+    SPECILIAZE_UNUSED_COPYARRAY(cfloat, uint)
+    SPECILIAZE_UNUSED_COPYARRAY(cfloat, int)
+    SPECILIAZE_UNUSED_COPYARRAY(cfloat, intl)
+    SPECILIAZE_UNUSED_COPYARRAY(cfloat, uintl)
+    SPECILIAZE_UNUSED_COPYARRAY(cfloat, short)
+    SPECILIAZE_UNUSED_COPYARRAY(cfloat, ushort)
+    SPECILIAZE_UNUSED_COPYARRAY(cdouble, double)
+    SPECILIAZE_UNUSED_COPYARRAY(cdouble, float)
+    SPECILIAZE_UNUSED_COPYARRAY(cdouble, uchar)
+    SPECILIAZE_UNUSED_COPYARRAY(cdouble, char)
+    SPECILIAZE_UNUSED_COPYARRAY(cdouble, uint)
+    SPECILIAZE_UNUSED_COPYARRAY(cdouble, int)
+    SPECILIAZE_UNUSED_COPYARRAY(cdouble, intl)
+    SPECILIAZE_UNUSED_COPYARRAY(cdouble, uintl)
+    SPECILIAZE_UNUSED_COPYARRAY(cdouble, short)
+    SPECILIAZE_UNUSED_COPYARRAY(cdouble, ushort)
+
+    template<typename T>
+    T getScalar(const Array<T> &in)
+    {
+        T retVal;
+        getQueue().enqueueReadBuffer(*in.get(), CL_TRUE, sizeof(T) * in.getOffset(), sizeof(T), &retVal);
+        return retVal;
+    }
+
+#define INSTANTIATE_GETSCALAR(T) \
+    template T getScalar(const Array<T> &in);
+
+    INSTANTIATE_GETSCALAR(float  )
+    INSTANTIATE_GETSCALAR(double )
+    INSTANTIATE_GETSCALAR(cfloat )
+    INSTANTIATE_GETSCALAR(cdouble)
+    INSTANTIATE_GETSCALAR(int    )
+    INSTANTIATE_GETSCALAR(uint   )
+    INSTANTIATE_GETSCALAR(uchar  )
+    INSTANTIATE_GETSCALAR(char   )
+    INSTANTIATE_GETSCALAR(intl   )
+    INSTANTIATE_GETSCALAR(uintl  )
+    INSTANTIATE_GETSCALAR(short  )
+    INSTANTIATE_GETSCALAR(ushort )
 }

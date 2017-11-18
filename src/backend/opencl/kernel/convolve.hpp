@@ -19,9 +19,9 @@ namespace kernel
 // below shared MAX_*_LEN's are calculated based on
 // a maximum shared memory configuration of 48KB per block
 // considering complex types as well
-static const dim_type MAX_CONV1_FILTER_LEN = 129;
-static const dim_type MAX_CONV2_FILTER_LEN = 11;
-static const dim_type MAX_CONV3_FILTER_LEN = 5;
+static const int MAX_CONV1_FILTER_LEN = 129;
+static const int MAX_CONV2_FILTER_LEN = 17;
+static const int MAX_CONV3_FILTER_LEN = 5;
 
 /*
  * convolution kernel wrappers are split to multiple files to
@@ -31,19 +31,29 @@ static const dim_type MAX_CONV3_FILTER_LEN = 5;
  * file under the folder 'kernel/convovel' with their implementations
  * written in corresponding conv[1|2|3].cpp files under the same folder.
  */
-template<typename T, typename accType, dim_type baseDim, bool expand>
-void convolve_nd(Param out, const Param signal, const Param filter, ConvolveBatchKind kind)
+template<typename T, typename accType, int baseDim, bool expand>
+void convolve_nd(Param out, const Param signal, const Param filter, AF_BATCH_KIND kind)
 {
     conv_kparam_t param;
-    // prepare launch parameters
-    prepareKernelArgs<T, baseDim>(param, kind, out.info.dims, signal.info.dims, filter.info.dims,
-                                  out.info.strides, signal.info.strides, filter.info.strides);
+
+    for (int i=0; i<3; ++i) {
+        param.o[i] = 0;
+        param.s[i] = 0;
+    }
+    param.launchMoreBlocks = kind==AF_BATCH_SAME || kind==AF_BATCH_RHS;
+    param.outHasNoOffset   = kind==AF_BATCH_LHS  || kind==AF_BATCH_NONE;
+    param.inHasNoOffset    = kind!=AF_BATCH_SAME;
+
+    prepareKernelArgs<T>(param, out.info.dims, filter.info.dims, baseDim);
 
     switch(baseDim) {
         case 1: conv1<T, accType, expand>(param, out, signal, filter); break;
         case 2: conv2<T, accType, expand>(param, out, signal, filter); break;
         case 3: conv3<T, accType, expand>(param, out, signal, filter); break;
     }
+
+    CL_DEBUG_FINISH(getQueue());
+    bufferFree(param.impulse);
 }
 
 }

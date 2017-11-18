@@ -26,12 +26,6 @@ float accuracy(const array& predicted, const array& target)
     return 100 * count<float>(plabels == tlabels) / tlabels.elements();
 }
 
-// Activation function
-array sigmoid(const array &val)
-{
-    return 1 / (1 + exp(-val));
-}
-
 // Predict based on given parameters
 array predict(const array &X, const array &Weights)
 {
@@ -55,10 +49,10 @@ array train(const array &X, const array &Y,
         if (mean_abs_err  < maxerr) break;
 
         if (verbose && (i + 1) % 25 == 0) {
-            printf("Iter :%d, Err: %.4f\n", i + 1, mean_abs_err);
+            printf("Iter: %d, Err: %.4f\n", i + 1, mean_abs_err);
         }
 
-        Weights = Weights + alpha * matmul(transpose(X), err);
+        Weights = Weights + alpha * matmulTN(X, err);
     }
 
     return Weights;
@@ -141,12 +135,13 @@ int main(int argc, char** argv)
 
     try {
 
-        af::deviceset(device);
+        af::setDevice(device);
         af::info();
         return perceptron_demo(console, perc);
 
     } catch (af::exception &ae) {
-        std::cout << ae.what() << std::endl;
+        std::cerr << ae.what() << std::endl;
     }
 
+    return 0;
 }

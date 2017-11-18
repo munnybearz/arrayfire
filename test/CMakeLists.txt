@@ -1,74 +1,254 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+# Copyright (c) 2017, ArrayFire
+# All rights reserved.
+#
+# This file is distributed under 3-clause BSD license.
+# The complete license agreement can be obtained at:
+# http://arrayfire.com/licenses/BSD-3-Clause
 
-REMOVE_DEFINITIONS(-std=c++11)
+if(NOT TARGET gtest)
+  # gtest targets cmake version 2.6 which throws warnings for policy CMP0042 on
+  # newer cmakes. This sets the default global setting for that policy.
+  set(CMAKE_POLICY_DEFAULT_CMP0042 NEW)
+  if(WIN32)
+    set(gtest_force_shared_crt ON
+        CACHE INTERNAL "Required so that the libs Runtime is not set to MT DLL")
+  endif()
 
-MACRO(CREATE_TESTS BACKEND GTEST_LIBS)
-    STRING(TOUPPER ${BACKEND} DEF_NAME)
+  add_subdirectory(gtest/googletest EXCLUDE_FROM_ALL)
+  set_target_properties(gtest gtest_main
+    PROPERTIES
+      FOLDER "ExternalProjectTargets/gtest")
 
-    FOREACH(FILE ${FILES})
-        GET_FILENAME_COMPONENT(FNAME ${FILE} NAME_WE)
-        SET(TEST_NAME ${FNAME}_${BACKEND})
+  # Hide gtest project variables
+  mark_as_advanced(
+    BUILD_SHARED_LIBS
+    gtest_build_samples
+    gtest_build_tests
+    gtest_disable_pthreads
+    gtest_force_shared_crt
+    gtest_hide_internal_symbols)
+endif()
 
-        ADD_TEST(Test_${TEST_NAME} ${TEST_NAME})
-        ADD_EXECUTABLE(${TEST_NAME} ${FNAME}.cpp)
-        TARGET_LINK_LIBRARIES(${TEST_NAME}  af${BACKEND}
-                      ${THREAD_LIB_FLAG}
-                      ${GTEST_LIBS})
-        SET_TARGET_PROPERTIES(${TEST_NAME} PROPERTIES COMPILE_FLAGS -DAF_${DEF_NAME})
-    ENDFOREACH()
+# Reset the CXX flags for tests
+unset(CMAKE_CXX_STANDARD)
+set(TESTDATA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/data")
 
-ENDMACRO(CREATE_TESTS)
+if(${USE_RELATIVE_TEST_DIR})
+    # RELATIVE_TEST_DATA_DIR is a User-visible option with default value of test/data directory
+    set(RELATIVE_TEST_DATA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/data" CACHE STRING "Relative Test Data Directory")
+    set(TESTDATA_SOURCE_DIR ${RELATIVE_TEST_DATA_DIR})
+else(${USE_RELATIVE_TEST_DIR})  # Not using relative test data directory
+    set(TESTDATA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/data")
+endif(${USE_RELATIVE_TEST_DIR})
 
-FIND_PACKAGE(Threads REQUIRED)
-IF(CMAKE_USE_PTHREADS_INIT AND NOT "${APPLE}")
-    SET(THREAD_LIB_FLAG "-pthread")
-ELSE()
-    SET(THREAD_LIB_FLAG ${CMAKE_THREAD_LIBS_INIT})
-ENDIF()
+if(BUILD_CPU)
+  list(APPEND enabled_backends "cpu")
+endif(BUILD_CPU)
 
-INCLUDE("${CMAKE_MODULE_PATH}/build_gtest.cmake")
-INCLUDE_DIRECTORIES(${GTEST_INCLUDE_DIRS})
+if(BUILD_CUDA)
+  list(APPEND enabled_backends "cuda")
+endif(BUILD_CUDA)
 
-SET(TESTDATA_SOURCE_DIR "${CMAKE_SOURCE_DIR}/test/data")
-ADD_DEFINITIONS("-D TEST_DIR=\"\\\"${TESTDATA_SOURCE_DIR}\\\"\"")
+if(BUILD_OPENCL)
+  list(APPEND enabled_backends "opencl")
+endif(BUILD_OPENCL)
 
-# Check if data exists
-IF (EXISTS "${TESTDATA_SOURCE_DIR}" AND IS_DIRECTORY "${TESTDATA_SOURCE_DIR}"
-    AND EXISTS "${TESTDATA_SOURCE_DIR}/README.md")
-    # Test data is available
-    # Do Nothing
-ELSE (EXISTS "${TESTDATA_SOURCE_DIR}" AND IS_DIRECTORY "${TESTDATA_SOURCE_DIR}"
-    AND EXISTS "${TESTDATA_SOURCE_DIR}/README.md")
-    MESSAGE(WARNING "Test Data is not available. Tests will build but fail when run.")
-    MESSAGE("Did you miss the --recursive option when cloning?")
-    MESSAGE("Run the following commands to correct this:")
-    MESSAGE("git submodule init")
-    MESSAGE("git submodule update")
-    MESSAGE("git submodule foreach git pull origin master")
-ENDIF()
+if(BUILD_UNIFIED)
+  list(APPEND enabled_backends "unified")
+endif(BUILD_UNIFIED)
 
-INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR})
-FILE(GLOB FILES "*.cpp")
+include(CMakeParseArguments)
 
-IF(${BUILD_CPU})
-    CREATE_TESTS(cpu "${GTEST_LIBRARIES}")
-ENDIF()
+function(make_test)
+  set(options CXX11)
+  set(single_args SRC)
+  set(multi_args LIBRARIES DEFINITIONS)
+  cmake_parse_arguments(mt_args "${options}" "${single_args}" "${multi_args}" ${ARGN})
 
-IF(${BUILD_CUDA})
-    FIND_PACKAGE(CUDA REQUIRED)
-    IF("${APPLE}" AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang" AND ${CUDA_VERSION_MAJOR} VERSION_LESS 7)
-        CREATE_TESTS(cuda "${GTEST_LIBRARIES_STDLIB}")
-        FOREACH(FILE ${FILES})
-            GET_FILENAME_COMPONENT(FNAME ${FILE} NAME_WE)
-            SET(TEST_NAME ${FNAME}_cuda)
-            SET_TARGET_PROPERTIES(${TEST_NAME} PROPERTIES COMPILE_FLAGS -stdlib=libstdc++)
-            SET_TARGET_PROPERTIES(${TEST_NAME} PROPERTIES LINK_FLAGS -stdlib=libstdc++)
-        ENDFOREACH()
-    ELSE("${APPLE}" AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang" AND ${CUDA_VERSION_MAJOR} VERSION_LESS 7)
-        CREATE_TESTS(cuda "${GTEST_LIBRARIES}")
-    ENDIF("${APPLE}" AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang" AND ${CUDA_VERSION_MAJOR} VERSION_LESS 7)
-ENDIF()
+  get_filename_component(src_name ${mt_args_SRC} NAME_WE)
+  foreach(backend ${enabled_backends})
+    set(target "${src_name}_${backend}")
+    add_executable(${target} ${mt_args_SRC})
+    target_include_directories(${target}
+      PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}
+      )
+    target_link_libraries(${target}
+      PRIVATE
+        gtest
+        gtest_main
+        ${mt_args_LIBRARIES}
+      )
 
-IF(${BUILD_OPENCL})
-    CREATE_TESTS(opencl "${GTEST_LIBRARIES}")
-ENDIF()
+    if(${backend} STREQUAL "unified")
+      target_link_libraries(${target}
+        PRIVATE
+          af
+          ${CMAKE_DL_LIBS}
+          )
+    else()
+      target_link_libraries(${target}
+        PRIVATE
+          af${backend}
+          )
+    endif()
+
+    if(${mt_args_CXX11})
+      set_target_properties(${target}
+        PROPERTIES
+          CXX_STANDARD 11)
+    endif(${mt_args_CXX11})
+
+	  set_target_properties(${target}
+      PROPERTIES
+        FOLDER "Tests")
+
+    target_compile_definitions(${target}
+      PRIVATE
+        TEST_DIR="${TESTDATA_SOURCE_DIR}"
+        AF_$<UPPER_CASE:${backend}>
+        ${mt_args_DEFINITIONS}
+      )
+    if(WIN32)
+      target_compile_definitions(${target}
+        PRIVATE
+          WIN32_LEAN_AND_MEAN
+          NOMINMAX
+        )
+    endif()
+
+    # TODO(umar): Create this executable separately
+    if(NOT ${backend} STREQUAL "unified" OR ${target} STREQUAL "backend_unified")
+      add_test(NAME ${target} COMMAND ${target})
+    endif()
+  endforeach()
+endfunction(make_test)
+
+make_test(SRC approx1.cpp)
+make_test(SRC approx2.cpp)
+make_test(SRC array.cpp)
+make_test(SRC assign.cpp)
+make_test(SRC backend.cpp)
+make_test(SRC basic.cpp)
+make_test(SRC basic_c.c)
+make_test(SRC bilateral.cpp)
+make_test(SRC binary.cpp)
+make_test(SRC blas.cpp)
+make_test(SRC canny.cpp)
+make_test(SRC cast.cpp)
+make_test(SRC cholesky_dense.cpp)
+make_test(SRC clamp.cpp)
+make_test(SRC compare.cpp)
+make_test(SRC complex.cpp)
+make_test(SRC constant.cpp)
+make_test(SRC convolve.cpp)
+make_test(SRC corrcoef.cpp)
+make_test(SRC covariance.cpp)
+make_test(SRC diagonal.cpp)
+make_test(SRC diff1.cpp)
+make_test(SRC diff2.cpp)
+make_test(SRC dog.cpp)
+make_test(SRC dot.cpp)
+make_test(SRC empty.cpp)
+make_test(SRC fast.cpp)
+make_test(SRC fft.cpp)
+make_test(SRC fft_large.cpp)
+make_test(SRC fft_real.cpp)
+make_test(SRC fftconvolve.cpp)
+make_test(SRC flat.cpp)
+make_test(SRC flip.cpp)
+make_test(SRC gaussiankernel.cpp)
+make_test(SRC gen_assign.cpp)
+make_test(SRC gen_index.cpp)
+make_test(SRC getting_started.cpp)
+make_test(SRC gfor.cpp)
+make_test(SRC gradient.cpp)
+make_test(SRC gray_rgb.cpp)
+make_test(SRC hamming.cpp)
+make_test(SRC harris.cpp)
+make_test(SRC histogram.cpp)
+make_test(SRC homography.cpp)
+make_test(SRC hsv_rgb.cpp)
+make_test(SRC iir.cpp)
+make_test(SRC imageio.cpp)
+make_test(SRC index.cpp)
+make_test(SRC info.cpp)
+make_test(SRC internal.cpp)
+make_test(SRC inverse_dense.cpp)
+make_test(SRC iota.cpp)
+make_test(SRC ireduce.cpp)
+make_test(SRC jit.cpp)
+make_test(SRC join.cpp)
+make_test(SRC lu_dense.cpp)
+make_test(SRC main.cpp)
+#make_test(manual_memory_test.cpp)
+make_test(SRC match_template.cpp)
+make_test(SRC math.cpp)
+make_test(SRC matrix_manipulation.cpp)
+make_test(SRC mean.cpp)
+make_test(SRC meanshift.cpp)
+make_test(SRC medfilt.cpp)
+make_test(SRC median.cpp)
+make_test(SRC memory.cpp)
+make_test(SRC memory_lock.cpp)
+make_test(SRC missing.cpp)
+make_test(SRC moddims.cpp)
+make_test(SRC moments.cpp)
+make_test(SRC morph.cpp)
+make_test(SRC nearest_neighbour.cpp)
+
+if(OpenCL_FOUND)
+  make_test(SRC ocl_ext_context.cpp
+            LIBRARIES OpenCL::OpenCL)
+endif()
+
+make_test(SRC orb.cpp)
+make_test(SRC qr_dense.cpp)
+make_test(SRC random.cpp)
+make_test(SRC range.cpp)
+make_test(SRC rank_dense.cpp)
+make_test(SRC reduce.cpp)
+make_test(SRC regions.cpp)
+make_test(SRC reorder.cpp)
+make_test(SRC replace.cpp)
+make_test(SRC resize.cpp)
+make_test(SRC rotate.cpp)
+make_test(SRC rotate_linear.cpp)
+make_test(SRC sat.cpp)
+make_test(SRC scan.cpp)
+make_test(SRC scan_by_key.cpp)
+make_test(SRC select.cpp)
+make_test(SRC set.cpp)
+make_test(SRC shift.cpp)
+
+if(BUILD_NONFREE)
+  make_test(SRC gloh_nonfree.cpp DEFINITIONS AF_BUILD_NONFREE_SIFT)
+  make_test(SRC sift_nonfree.cpp DEFINITIONS AF_BUILD_NONFREE_SIFT)
+endif()
+
+make_test(SRC sobel.cpp)
+make_test(SRC solve_dense.cpp        CXX11)
+make_test(SRC sort.cpp)
+make_test(SRC sort_by_key.cpp)
+make_test(SRC sort_index.cpp)
+make_test(SRC sparse.cpp)
+make_test(SRC sparse_arith.cpp)
+make_test(SRC sparse_convert.cpp)
+make_test(SRC stdev.cpp)
+make_test(SRC susan.cpp)
+make_test(SRC svd_dense.cpp)
+make_test(SRC threading.cpp          CXX11)
+make_test(SRC tile.cpp)
+make_test(SRC transform.cpp)
+make_test(SRC transform_coordinates.cpp)
+make_test(SRC translate.cpp)
+make_test(SRC transpose.cpp)
+make_test(SRC transpose_inplace.cpp)
+make_test(SRC triangle.cpp)
+make_test(SRC unwrap.cpp)
+make_test(SRC var.cpp)
+make_test(SRC where.cpp)
+make_test(SRC wrap.cpp)
+make_test(SRC write.cpp)
+make_test(SRC ycbcr_rgb.cpp)

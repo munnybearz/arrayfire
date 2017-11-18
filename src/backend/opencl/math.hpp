@@ -9,11 +9,23 @@
 
 #pragma once
 
+#include <af/defines.h>
+#include <common/defines.hpp>
+
+#include <backend.hpp>
+#include <types.hpp>
+
 #include <complex>
 #include <limits>
 #include <algorithm>
-#include "backend.hpp"
-#include "types.hpp"
+
+#if defined(__GNUC__) || defined(__GNUG__)
+    /* GCC/G++, Clang/LLVM, Intel ICC */
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wunused-function"
+#else
+    /* Other */
+#endif
 
 namespace opencl
 {
@@ -29,29 +41,25 @@ namespace opencl
     cfloat division(cfloat lhs, double rhs);
     cdouble division(cdouble lhs, double rhs);
 
-#ifndef STATIC_
-#define STATIC_
-#endif
-
     template<> STATIC_
     cfloat max<cfloat>(cfloat lhs, cfloat rhs)
     {
         return abs(lhs) > abs(rhs) ? lhs : rhs;
     }
 
-	template<> STATIC_
+    template<> STATIC_
     cdouble max<cdouble>(cdouble lhs, cdouble rhs)
     {
         return abs(lhs) > abs(rhs) ? lhs : rhs;
     }
 
-	template<> STATIC_
+    template<> STATIC_
     cfloat min<cfloat>(cfloat lhs, cfloat rhs)
     {
         return abs(lhs) < abs(rhs) ? lhs :  rhs;
     }
 
-	template<> STATIC_
+    template<> STATIC_
     cdouble min<cdouble>(cdouble lhs, cdouble rhs)
     {
         return abs(lhs) < abs(rhs) ? lhs :  rhs;
@@ -63,7 +71,7 @@ namespace opencl
         return (T)(val);
     }
 
-	template<> STATIC_
+    template<> STATIC_
     cfloat  scalar<cfloat >(double val)
     {
         cfloat  cval;
@@ -72,7 +80,7 @@ namespace opencl
         return cval;
     }
 
-	template<> STATIC_
+    template<> STATIC_
     cdouble scalar<cdouble >(double val)
     {
         cdouble cval;
@@ -82,7 +90,7 @@ namespace opencl
     }
 
     template<typename To, typename Ti>
-	static To scalar(Ti real, Ti imag)
+    static To scalar(Ti real, Ti imag)
     {
         To  cval;
         cval.s[0] = real;
@@ -90,8 +98,12 @@ namespace opencl
         return cval;
     }
 
-    template <typename T> T limit_max() { return std::numeric_limits<T>::max(); }
-    template <typename T> T limit_min() { return std::numeric_limits<T>::min(); }
+    template <typename T> STATIC_ T      maxval() { return  std::numeric_limits<T     >::max();      }
+    template <typename T> STATIC_ T      minval() { return  std::numeric_limits<T     >::min();      }
+    template <>           STATIC_ float  maxval() { return  std::numeric_limits<float >::infinity(); }
+    template <>           STATIC_ double maxval() { return  std::numeric_limits<double>::infinity(); }
+    template <>           STATIC_ float  minval() { return -std::numeric_limits<float >::infinity(); }
+    template <>           STATIC_ double minval() { return -std::numeric_limits<double>::infinity(); }
 
     static inline double real(cdouble in)
     {
@@ -115,7 +127,16 @@ namespace opencl
     bool operator ==(cdouble a, cdouble b);
     bool operator !=(cdouble a, cdouble b);
     cfloat operator +(cfloat a, cfloat b);
+    cfloat operator +(cfloat a);
     cdouble operator +(cdouble a, cdouble b);
+    cdouble operator +(cdouble a);
     cfloat operator *(cfloat a, cfloat b);
     cdouble operator *(cdouble a, cdouble b);
 }
+
+#if defined(__GNUC__) || defined(__GNUG__)
+    /* GCC/G++, Clang/LLVM, Intel ICC */
+    #pragma GCC diagnostic pop
+#else
+    /* Other */
+#endif

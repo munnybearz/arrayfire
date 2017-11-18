@@ -20,11 +20,12 @@ using std::vector;
 using std::string;
 using std::cout;
 using std::endl;
+using std::abs;
 using af::cfloat;
 using af::cdouble;
 
 template<typename T>
-class Rotate : public ::testing::Test
+class RotateLinear : public ::testing::Test
 {
     public:
         virtual void SetUp() {
@@ -36,10 +37,10 @@ class Rotate : public ::testing::Test
 };
 
 // create a list of types to be tested
-typedef ::testing::Types<float, double> TestTypes;
+typedef ::testing::Types<float, double, cfloat, cdouble, int, intl, char, short> TestTypes;
 
 // register the type list
-TYPED_TEST_CASE(Rotate, TestTypes);
+TYPED_TEST_CASE(RotateLinear, TestTypes);
 
 #define PI 3.1415926535897931f
 
@@ -88,10 +89,11 @@ void rotateTest(string pTestFile, const unsigned resultIdx, const float angle, c
     // ASSERT_EQ (in comments below) to pass for CUDA & OpenCL backends
     size_t fail_count = 0;
     for(size_t i = 0; i < nElems; i++) {
-        if(abs((double)(tests[resultIdx][i] - outData[i])) > 0.001) // increased from 0.0001 because of VS FP errors
+        if(abs((tests[resultIdx][i] - (T)outData[i])) > 0.001) {
             fail_count++;
+        }
     }
-    ASSERT_EQ(true, ((fail_count / (float)nElems) < 0.02));
+    ASSERT_EQ(true, ((fail_count / (float)nElems) < 0.02)) << "where count = " << fail_count << std::endl;
 
     //for (size_t elIter = 0; elIter < nElems; ++elIter) {
     //    ASSERT_EQ(tests[resultIdx][elIter], outData[elIter]) << "at: " << elIter << std::endl;
@@ -101,15 +103,15 @@ void rotateTest(string pTestFile, const unsigned resultIdx, const float angle, c
     // Delete
     delete[] outData;
 
-    if(inArray   != 0) af_destroy_array(inArray);
-    if(outArray  != 0) af_destroy_array(outArray);
-    if(tempArray != 0) af_destroy_array(tempArray);
+    if(inArray   != 0) af_release_array(inArray);
+    if(outArray  != 0) af_release_array(outArray);
+    if(tempArray != 0) af_release_array(tempArray);
 }
 
-#define ROTATE_INIT(desc, file, resultIdx, angle, crop, recenter)                               \
-    TYPED_TEST(Rotate, desc)                                                                    \
-    {                                                                                           \
-        rotateTest<TypeParam>(string(TEST_DIR"/rotate/"#file".test"), resultIdx, angle, crop, recenter);\
+#define ROTATE_INIT(desc, file, resultIdx, angle, crop, recenter)       \
+    TYPED_TEST(RotateLinear, desc)                                      \
+    {                                                                   \
+        rotateTest<TypeParam>(string(TEST_DIR"/rotate/"#file".test"), resultIdx, angle, crop, recenter); \
     }
 
     ROTATE_INIT(Square180NoCropRecenter     , rotatelinear1,  0, 180, false, true);
@@ -164,7 +166,7 @@ void rotateTest(string pTestFile, const unsigned resultIdx, const float angle, c
 
 ////////////////////////////////// CPP //////////////////////////////////////
 
-TEST(Rotate, CPP)
+TEST(RotateLinear, CPP)
 {
     if (noDoubleTests<float>()) return;
 
@@ -199,7 +201,7 @@ TEST(Rotate, CPP)
     // ASSERT_EQ (in comments below) to pass for CUDA & OpenCL backends
     size_t fail_count = 0;
     for(size_t i = 0; i < nElems; i++) {
-        if(abs(tests[resultIdx][i] - outData[i]) > 0.0001)
+        if(fabs(tests[resultIdx][i] - outData[i]) > 0.0001)
             fail_count++;
     }
     ASSERT_EQ(true, ((fail_count / (float)nElems) < 0.01));

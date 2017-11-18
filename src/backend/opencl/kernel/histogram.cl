@@ -12,42 +12,51 @@ void histogram(__global outType *         d_dst,
                KParam                     oInfo,
                __global const inType *    d_src,
                KParam                     iInfo,
-               __global const float2 *    d_minmax,
                __local outType *          localMem,
-               dim_type len, dim_type nbins, dim_type blk_x)
+               int len, int nbins, float minval, float maxval, int nBBS)
 {
-    // offset minmax array to account for batch ops
-    __global const float2 * d_mnmx = d_minmax + get_group_id(1);
+    unsigned b2    = get_group_id(0)/nBBS;
+    int start = (get_group_id(0)-b2*nBBS) * THRD_LOAD * get_local_size(0) + get_local_id(0);
+    int end   = min((int)(start + THRD_LOAD * get_local_size(0)), len);
 
     // offset input and output to account for batch ops
-    __global const inType *in = d_src + get_group_id(1) * iInfo.strides[2] + iInfo.offset;
-    __global outType * out    = d_dst + get_group_id(1) * oInfo.strides[2];
+    __global const inType *in = d_src + b2 * iInfo.strides[2] + get_group_id(1) * iInfo.strides[3] + iInfo.offset;
+    __global outType * out    = d_dst + b2 * oInfo.strides[2] + get_group_id(1) * oInfo.strides[3];
 
-    dim_type start = get_group_id(0) * THRD_LOAD * get_local_size(0) + get_local_id(0);
-    dim_type end   = min((dim_type)(start + THRD_LOAD * get_local_size(0)), len);
+    float dx = (maxval-minval)/(float)nbins;
 
-    __local float minval;
-    __local float dx;
+    bool use_global = nbins > MAX_BINS;
 
-    if (get_local_id(0) == 0) {
-        float2 minmax = *d_mnmx;
-        minval = minmax.s0;
-        dx     = (minmax.s1-minmax.s0) / (float)nbins;
+    if (!use_global) {
+        for (int i = get_local_id(0); i < nbins; i += get_local_size(0))
+            localMem[i] = 0;
+        barrier(CLK_LOCAL_MEM_FENCE);
     }
-
-    for (dim_type i = get_local_id(0); i < nbins; i += get_local_size(0))
-        localMem[i] = 0;
-    barrier(CLK_LOCAL_MEM_FENCE);
 
     for (int row = start; row < end; row += get_local_size(0)) {
-        int bin = (int)(((float)in[row] - minval) / dx);
+#if defined(IS_LINEAR)
+        int idx = row;
+#else
+        int i0 = row % iInfo.dims[0];
+        int i1 = row / iInfo.dims[0];
+        int idx= i0+i1*iInfo.strides[1];
+#endif
+        int bin = (int)(((float)in[idx] - minval) / dx);
         bin     = max(bin, 0);
         bin     = min(bin, (int)nbins-1);
-        atomic_inc((localMem + bin));
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
 
-    for (dim_type i = get_local_id(0); i < nbins; i += get_local_size(0)) {
-        atomic_add((out + i), localMem[i]);
+        if (use_global) {
+            atomic_inc((out + bin));
+        } else {
+            atomic_inc((localMem + bin));
+        }
+
+    }
+
+    if (!use_global) {
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for (int i = get_local_id(0); i < nbins; i += get_local_size(0)) {
+            atomic_add((out + i), localMem[i]);
+        }
     }
 }

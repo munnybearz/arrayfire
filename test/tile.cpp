@@ -38,7 +38,7 @@ class Tile : public ::testing::Test
 };
 
 // create a list of types to be tested
-typedef ::testing::Types<float, double, cfloat, cdouble, int, unsigned int, char, unsigned char> TestTypes;
+typedef ::testing::Types<float, double, cfloat, cdouble, int, unsigned int, intl, uintl, char, unsigned char, short, ushort> TestTypes;
 
 // register the type list
 TYPED_TEST_CASE(Tile, TestTypes);
@@ -83,9 +83,9 @@ void tileTest(string pTestFile, const unsigned resultIdx, const uint x, const ui
     // Delete
     delete[] outData;
 
-    if(inArray   != 0) af_destroy_array(inArray);
-    if(outArray  != 0) af_destroy_array(outArray);
-    if(tempArray != 0) af_destroy_array(tempArray);
+    if(inArray   != 0) af_release_array(inArray);
+    if(outArray  != 0) af_release_array(outArray);
+    if(tempArray != 0) af_release_array(tempArray);
 }
 
 #define TILE_INIT(desc, file, resultIdx, x, y, z, w)                                        \
@@ -148,3 +148,37 @@ TEST(Tile, CPP)
     delete[] outData;
 }
 
+TEST(Tile, MaxDim)
+{
+    if (noDoubleTests<float>()) return;
+
+    const size_t largeDim = 65535 * 32 + 1;
+    const unsigned x = 1;
+    const unsigned z = 1;
+    unsigned y = 2;
+    unsigned w = 1;
+
+    af::array input = af::constant(1, 1, largeDim);
+    af::array output = af::tile(input, x, y, z, w);
+
+    ASSERT_EQ(1, output.dims(0));
+    ASSERT_EQ(2 * largeDim, output.dims(1));
+    ASSERT_EQ(1, output.dims(2));
+    ASSERT_EQ(1, output.dims(3));
+
+    ASSERT_EQ(1.f, af::product<float>(output));
+
+    y = 1;
+    w = 2;
+
+    input  = af::constant(1, 1, 1, 1, largeDim);
+    output = af::tile(input, x, y, z, w);
+
+    ASSERT_EQ(1, output.dims(0));
+    ASSERT_EQ(1, output.dims(1));
+    ASSERT_EQ(1, output.dims(2));
+    ASSERT_EQ(2 * largeDim, output.dims(3));
+
+    ASSERT_EQ(1.f, af::product<float>(output));
+
+}

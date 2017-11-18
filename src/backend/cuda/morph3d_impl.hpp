@@ -8,8 +8,6 @@
  ********************************************************/
 
 #include <af/dim4.hpp>
-#include <af/defines.h>
-#include <ArrayInfo.hpp>
 #include <Array.hpp>
 #include <morph.hpp>
 #include <kernel/morph.hpp>
@@ -31,15 +29,12 @@ Array<T> morph3d(const Array<T> &in, const Array<T> &mask)
     if (mdims[0] > 7)
         AF_ERROR("Upto 7x7x7 kernels are only supported in CUDA backend", AF_ERR_SIZE);
 
-    if (in.dims()[3] > 1)
-        AF_ERROR("Batch not supported for volumetic morph operations in CUDA backend",
-                 AF_ERR_NOT_SUPPORTED);
-
     Array<T> out       = createEmptyArray<T>(in.dims());
 
-    CUDA_CHECK(cudaMemcpyToSymbol(kernel::cFilter, mask.get(),
+    CUDA_CHECK(cudaMemcpyToSymbolAsync(kernel::cFilter, mask.get(),
                                   mdims[0] * mdims[1] *mdims[2] * sizeof(T),
-                                  0, cudaMemcpyDeviceToDevice));
+                                  0, cudaMemcpyDeviceToDevice,
+                                  cuda::getActiveStream()));
 
     if (isDilation)
         kernel::morph3d<T, true >(out, in, mdims[0]);

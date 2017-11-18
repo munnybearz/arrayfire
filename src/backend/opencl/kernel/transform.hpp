@@ -8,21 +8,24 @@
  ********************************************************/
 
 #pragma once
-#include <kernel_headers/transform_interp.hpp>
+#include <kernel_headers/interp.hpp>
 #include <kernel_headers/transform.hpp>
 #include <program.hpp>
 #include <traits.hpp>
 #include <string>
-#include <mutex>
-#include <map>
-#include <dispatch.hpp>
+#include <common/dispatch.hpp>
 #include <Param.hpp>
+#include <cache.hpp>
 #include <debug_opencl.hpp>
+#include <type_util.hpp>
+#include <math.hpp>
+#include "config.hpp"
+#include "interp.hpp"
 
 using cl::Buffer;
 using cl::Program;
 using cl::Kernel;
-using cl::make_kernel;
+using cl::KernelFunctor;
 using cl::EnqueueArgs;
 using cl::NDRange;
 using std::string;
@@ -31,87 +34,117 @@ namespace opencl
 {
     namespace kernel
     {
-        static const dim_type TX = 16;
-        static const dim_type TY = 16;
+        static const int TX = 16;
+        static const int TY = 16;
         // Used for batching images
-        static const dim_type TI = 4;
+        static const int TI = 4;
 
-        template<typename T, bool isInverse, af_interp_type method>
-        void transform(Param out, const Param in, const Param tf)
+        using std::conditional;
+        using std::is_same;
+        template<typename T>
+        using wtype_t = typename conditional<is_same<T, double>::value, double, float>::type;
+
+        template<typename T>
+        using vtype_t = typename conditional<is_complex<T>::value,
+                                             T, wtype_t<T>
+                                            >::type;
+
+
+        template<typename T, int order>
+        void transform(Param out, const Param in,
+                       const Param tf, bool isInverse,
+                       bool isPerspective, af_interp_type method)
         {
-            try {
-                static std::once_flag compileFlags[DeviceManager::MAX_DEVICES];
-                static std::map<int, Program*>   transformProgs;
-                static std::map<int, Kernel *> transformKernels;
 
-                int device = getActiveDeviceId();
+            typedef typename dtype_traits<T>::base_type BT;
 
-                std::call_once( compileFlags[device], [device] () {
-                    std::ostringstream options;
-                    options << " -D T="        << dtype_traits<T>::getName()
-                            << " -D INVERSE="  << (isInverse ? 1 : 0);
+            std::string ref_name =
+                std::string("transform_") +
+                std::string(dtype_traits<T>::getName()) +
+                std::string("_") +
+                std::to_string(isInverse) +
+                std::string("_") +
+                std::to_string(isPerspective) +
+                std::string("_") +
+                std::to_string(order);
 
-                    if((af_dtype) dtype_traits<T>::af_type == c32 ||
-                       (af_dtype) dtype_traits<T>::af_type == c64) {
-                        options << " -D CPLX=1";
-                    } else {
-                        options << " -D CPLX=0";
-                    }
-                    if (std::is_same<T, double>::value ||
-                        std::is_same<T, cdouble>::value) {
-                        options << " -D USE_DOUBLE";
-                    }
+            int device = getActiveDeviceId();
+            kc_entry_t entry = kernelCache(device, ref_name);
 
-                    switch(method) {
-                        case AF_INTERP_NEAREST: options << " -D INTERP=NEAREST";
-                            break;
-                        case AF_INTERP_BILINEAR:  options << " -D INTERP=BILINEAR";
-                            break;
-                        default:
-                            break;
-                    }
+            if (entry.prog==0 && entry.ker==0) {
+                ToNumStr<T> toNumStr;
+                std::ostringstream options;
+                options << " -D T="           << dtype_traits<T>::getName()
+                        << " -D INVERSE="     << (isInverse ? 1 : 0)
+                        << " -D PERSPECTIVE=" << (isPerspective ? 1 : 0)
+                        << " -D ZERO="        << toNumStr(scalar<T>(0));
+                options << " -D InterpInTy="  << dtype_traits<T>::getName();
+                options << " -D InterpValTy=" << dtype_traits<vtype_t<T>>::getName();
+                options << " -D InterpPosTy=" << dtype_traits<wtype_t<BT>>::getName();
 
-                    const char *ker_strs[] = {transform_interp_cl, transform_cl};
-                    const int   ker_lens[] = {transform_interp_cl_len, transform_cl_len};
-                    Program prog;
-                    buildProgram(prog, 2, ker_strs, ker_lens, options.str());
-                    transformProgs[device] = new Program(prog);
-                    transformKernels[device] = new Kernel(*transformProgs[device], "transform_kernel");
-                });
-
-                auto transformOp = make_kernel<Buffer, const KParam,
-                                         const Buffer, const KParam, const Buffer, const KParam,
-                                         const dim_type, const dim_type, const dim_type>
-                                         (*transformKernels[device]);
-
-                NDRange local(TX, TY, 1);
-
-                dim_type nimages = in.info.dims[2];
-                dim_type global_x = local[0] * divup(out.info.dims[0], local[0]);
-                const dim_type blocksXPerImage = global_x / local[0];
-
-                if(nimages > TI) {
-                    dim_type tile_images = divup(nimages, TI);
-                    nimages = TI;
-                    global_x = global_x * tile_images;
+                if((af_dtype) dtype_traits<T>::af_type == c32 ||
+                    (af_dtype) dtype_traits<T>::af_type == c64) {
+                    options << " -D IS_CPLX=1";
+                    options << " -D TB=" << dtype_traits<BT>::getName();
+                } else {
+                    options << " -D IS_CPLX=0";
+                }
+                if (std::is_same<T, double>::value ||
+                    std::is_same<T, cdouble>::value) {
+                    options << " -D USE_DOUBLE";
                 }
 
-                // Multiplied in src/backend/transform.cpp
-                const dim_type ntransforms = out.info.dims[2] / in.info.dims[2];
+                options << " -D INTERP_ORDER=" << order;
+                addInterpEnumOptions(options);
 
-                NDRange global(global_x,
-                               local[1] * divup(out.info.dims[1], local[1]) * ntransforms,
-                               1);
+                const char *ker_strs[] = {interp_cl, transform_cl};
+                const int   ker_lens[] = {interp_cl_len, transform_cl_len};
+                Program prog;
+                buildProgram(prog, 2, ker_strs, ker_lens, options.str());
+                entry.prog = new Program(prog);
+                entry.ker = new Kernel(*entry.prog, "transform_kernel");
 
-                transformOp(EnqueueArgs(getQueue(), global, local),
-                            *out.data, out.info, *in.data, in.info,
-                            *tf.data, tf.info, nimages, ntransforms, blocksXPerImage);
-
-                CL_DEBUG_FINISH(getQueue());
-            } catch (cl::Error err) {
-                CL_TO_AF_ERROR(err);
-                throw;
+                addKernelToCache(device, ref_name, entry);
             }
+
+            auto transformOp = KernelFunctor<Buffer, const KParam,
+                                              const Buffer, const KParam,
+                                              const Buffer, const KParam,
+                                              const int, const int, const int, const int,
+                                              const int, const int, const int, const int>(*entry.ker);
+
+            const int nImg2 = in.info.dims[2];
+            const int nImg3 = in.info.dims[3];
+            const int nTfs2 = tf.info.dims[2];
+            const int nTfs3 = tf.info.dims[3];
+
+            NDRange local(TX, TY, 1);
+
+            int batchImg2 = 1;
+            if(nImg2 != nTfs2)
+                batchImg2 = min(nImg2, TI);
+
+            const int blocksXPerImage = divup(out.info.dims[0], local[0]);
+            const int blocksYPerImage = divup(out.info.dims[1], local[1]);
+
+            int global_x = local[0]
+                          * blocksXPerImage
+                          * (nImg2 / batchImg2);
+            int global_y = local[1]
+                          * blocksYPerImage
+                          * nImg3;
+            int global_z = local[2]
+                          * max((nTfs2 / nImg2), 1)
+                          * max((nTfs3 / nImg3), 1);
+
+            NDRange global(global_x, global_y, global_z);
+
+            transformOp(EnqueueArgs(getQueue(), global, local),
+                        *out.data, out.info, *in.data, in.info, *tf.data, tf.info,
+                        nImg2, nImg3, nTfs2, nTfs3, batchImg2,
+                        blocksXPerImage, blocksYPerImage, (int)method);
+
+            CL_DEBUG_FINISH(getQueue());
         }
     }
 }

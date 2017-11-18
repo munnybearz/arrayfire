@@ -8,4 +8,5 @@ GTAGS
 GRTAGS
 GPATH
 .dir-locals.el
-include/af/version.h
+docs/details/examples.dox
+/TAGS

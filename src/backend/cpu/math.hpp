@@ -33,7 +33,7 @@ namespace cpu
 
     template<> STATIC_ cfloat division<cfloat>(cfloat lhs, double rhs)
     {
-        cfloat retVal(real(lhs) / rhs, imag(lhs) / rhs);
+        cfloat retVal(real(lhs) / static_cast<float>(rhs), imag(lhs) / static_cast<float>(rhs));
         return retVal;
     }
 
@@ -43,11 +43,12 @@ namespace cpu
         return retVal;
     }
 
-    template <typename T> static inline T limit_max()
-    { return std::numeric_limits<T>::max(); }
-
-    template <typename T> static inline T limit_min()
-    { return std::numeric_limits<T>::min(); }
+    template <typename T> STATIC_ T      maxval() { return  std::numeric_limits<T     >::max();      }
+    template <typename T> STATIC_ T      minval() { return  std::numeric_limits<T     >::min();      }
+    template <>           STATIC_ float  maxval() { return  std::numeric_limits<float >::infinity(); }
+    template <>           STATIC_ double maxval() { return  std::numeric_limits<double>::infinity(); }
+    template <>           STATIC_ float  minval() { return -std::numeric_limits<float >::infinity(); }
+    template <>           STATIC_ double minval() { return -std::numeric_limits<double>::infinity(); }
 
     template<typename T>
     static T scalar(double val)
@@ -56,7 +57,7 @@ namespace cpu
     }
 
     template<typename To, typename Ti>
-	static To scalar(Ti real, Ti imag)
+    static To scalar(Ti real, Ti imag)
     {
         To  cval = {real, imag};
         return cval;

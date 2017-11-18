@@ -13,7 +13,7 @@
 #include <handle.hpp>
 #include <backend.hpp>
 #include <bilateral.hpp>
-#include <err_common.hpp>
+#include <common/err_common.hpp>
 
 using af::dim4;
 using namespace detail;
@@ -28,15 +28,11 @@ template<bool isColor>
 static af_err bilateral(af_array *out, const af_array &in, const float &s_sigma, const float &c_sigma)
 {
     try {
-        ArrayInfo info = getInfo(in);
+        const ArrayInfo& info = getInfo(in);
         af_dtype type  = info.getType();
         af::dim4 dims  = info.dims();
 
-        if (isColor) {
-            DIM_ASSERT(1, (dims.ndims()>=3));
-        } else {
-            DIM_ASSERT(1, (dims.ndims()>=2 && dims.ndims()<=3));
-        }
+        DIM_ASSERT(1, (dims.ndims()>=2));
 
         af_array output;
         switch(type) {
@@ -46,6 +42,8 @@ static af_err bilateral(af_array *out, const af_array &in, const float &s_sigma,
             case s32: output = bilateral<int   ,  float, isColor> (in, s_sigma, c_sigma); break;
             case u32: output = bilateral<uint  ,  float, isColor> (in, s_sigma, c_sigma); break;
             case u8 : output = bilateral<uchar ,  float, isColor> (in, s_sigma, c_sigma); break;
+            case s16: output = bilateral<short ,  float, isColor> (in, s_sigma, c_sigma); break;
+            case u16: output = bilateral<ushort,  float, isColor> (in, s_sigma, c_sigma); break;
             default : TYPE_ERROR(1, type);
         }
         std::swap(*out,output);

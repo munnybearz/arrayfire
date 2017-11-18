@@ -56,9 +56,8 @@ void uniqueTest(string pTestFile)
         ASSERT_EQ(AF_SUCCESS, af_set_unique(&outArray, inArray, d == 0 ? false : true));
 
         // Get result
-        T *outData;
-        outData = new T[currGoldBar.size()];
-        ASSERT_EQ(AF_SUCCESS, af_get_data_ptr((void*)outData, outArray));
+        vector<T >outData (currGoldBar.size());
+        ASSERT_EQ(AF_SUCCESS, af_get_data_ptr((void*)&outData.front(), outArray));
 
         size_t nElems = currGoldBar.size();
         for (size_t elIter = 0; elIter < nElems; ++elIter) {
@@ -66,11 +65,8 @@ void uniqueTest(string pTestFile)
                                                             << " for test: " << d << std::endl;
         }
 
-        // Delete
-        delete[] outData;
-
-        if(inArray   != 0) af_destroy_array(inArray);
-        if(outArray  != 0) af_destroy_array(outArray);
+        if(inArray   != 0) af_release_array(inArray);
+        if(outArray  != 0) af_release_array(outArray);
     }
 }
 
@@ -85,6 +81,10 @@ UNIQUE_TESTS(double)
 UNIQUE_TESTS(int)
 UNIQUE_TESTS(uint)
 UNIQUE_TESTS(uchar)
+UNIQUE_TESTS(short)
+UNIQUE_TESTS(ushort)
+UNIQUE_TESTS(intl)
+UNIQUE_TESTS(uintl)
 
 typedef af_err (*setFunc)(af_array *, const af_array, const af_array, const bool);
 
@@ -119,17 +119,14 @@ void setTest(string pTestFile)
 
         ASSERT_EQ(AF_SUCCESS, af_create_array(&inArray1, &in1.front(), dims1.ndims(),
                                               dims1.get(), (af_dtype) af::dtype_traits<T>::af_type));
-
-
         vector<T> currGoldBar(tests[d].begin(), tests[d].end());
 
         // Run sum
         ASSERT_EQ(AF_SUCCESS, af_set_func(&outArray, inArray0, inArray1, d == 0 ? false : true));
 
         // Get result
-        T *outData;
-        outData = new T[currGoldBar.size()];
-        ASSERT_EQ(AF_SUCCESS, af_get_data_ptr((void*)outData, outArray));
+        vector<T> outData(currGoldBar.size());
+        ASSERT_EQ(AF_SUCCESS, af_get_data_ptr((void*)&outData.front(), outArray));
 
         size_t nElems = currGoldBar.size();
         for (size_t elIter = 0; elIter < nElems; ++elIter) {
@@ -137,12 +134,9 @@ void setTest(string pTestFile)
                                                             << " for test: " << d << std::endl;
         }
 
-        // Delete
-        delete[] outData;
-
-        if(inArray0   != 0) af_destroy_array(inArray0);
-        if(inArray1   != 0) af_destroy_array(inArray1);
-        if(outArray  != 0) af_destroy_array(outArray);
+        if(inArray0   != 0) af_release_array(inArray0);
+        if(inArray1   != 0) af_release_array(inArray1);
+        if(outArray  != 0) af_release_array(outArray);
     }
 }
 
@@ -161,3 +155,7 @@ SET_TESTS(double)
 SET_TESTS(int)
 SET_TESTS(uint)
 SET_TESTS(uchar)
+SET_TESTS(short)
+SET_TESTS(ushort)
+SET_TESTS(intl)
+SET_TESTS(uintl)

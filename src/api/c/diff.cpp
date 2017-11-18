@@ -9,10 +9,10 @@
 
 #include <af/algorithm.h>
 #include <af/defines.h>
-#include <err_common.hpp>
+#include <common/err_common.hpp>
 #include <handle.hpp>
 #include <backend.hpp>
-#include <ArrayInfo.hpp>
+#include <common/ArrayInfo.hpp>
 #include <diff.hpp>
 
 using af::dim4;
@@ -36,10 +36,14 @@ af_err af_diff1(af_array *out, const af_array in, const int dim)
 
         ARG_ASSERT(2, ((dim >= 0) && (dim < 4)));
 
-        ArrayInfo info = getInfo(in);
+        const ArrayInfo& info = getInfo(in);
         af_dtype type = info.getType();
 
         af::dim4 in_dims = info.dims();
+        if(in_dims[dim] < 2) {
+            return af_create_handle(out, 0, nullptr, type);
+        }
+
         DIM_ASSERT(1, in_dims[dim] >= 2);
 
         af_array output;
@@ -52,6 +56,10 @@ af_err af_diff1(af_array *out, const af_array in, const int dim)
             case b8:  output = diff1<char   >(in,dim);  break;
             case s32: output = diff1<int    >(in,dim);  break;
             case u32: output = diff1<uint   >(in,dim);  break;
+            case s64: output = diff1<intl   >(in,dim);  break;
+            case u64: output = diff1<uintl  >(in,dim);  break;
+            case s16: output = diff1<short  >(in,dim);  break;
+            case u16: output = diff1<ushort >(in,dim);  break;
             case u8:  output = diff1<uchar  >(in,dim);  break;
             default:  TYPE_ERROR(1, type);
         }
@@ -69,10 +77,13 @@ af_err af_diff2(af_array *out, const af_array in, const int dim)
 
         ARG_ASSERT(2, ((dim >= 0) && (dim < 4)));
 
-        ArrayInfo info = getInfo(in);
+        const ArrayInfo& info = getInfo(in);
         af_dtype type = info.getType();
 
         af::dim4 in_dims = info.dims();
+        if(in_dims[dim] < 3) {
+            return af_create_handle(out, 0, nullptr, type);
+        }
         DIM_ASSERT(1, in_dims[dim] >= 3);
 
         af_array output;
@@ -85,6 +96,10 @@ af_err af_diff2(af_array *out, const af_array in, const int dim)
             case b8:  output = diff2<char   >(in,dim);  break;
             case s32: output = diff2<int    >(in,dim);  break;
             case u32: output = diff2<uint   >(in,dim);  break;
+            case s64: output = diff2<intl   >(in,dim);  break;
+            case u64: output = diff2<uintl  >(in,dim);  break;
+            case s16: output = diff2<short  >(in,dim);  break;
+            case u16: output = diff2<ushort >(in,dim);  break;
             case u8:  output = diff2<uchar  >(in,dim);  break;
             default:  TYPE_ERROR(1, type);
         }

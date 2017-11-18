@@ -7,12 +7,9 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <af/defines.h>
-#include <af/array.h>
 #include <af/dim4.hpp>
 #include <Array.hpp>
 #include <optypes.hpp>
-#include <err_cuda.hpp>
 #include <binary.hpp>
 
 namespace cuda

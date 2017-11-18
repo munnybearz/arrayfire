@@ -16,15 +16,11 @@
 namespace cuda
 {
     template<typename T>
-    Array<T> resize(const Array<T> &in, const dim_type odim0, const dim_type odim1,
+    Array<T> resize(const Array<T> &in, const dim_t odim0, const dim_t odim1,
                      const af_interp_type method)
     {
         const af::dim4 iDims = in.dims();
         af::dim4 oDims(odim0, odim1, iDims[2], iDims[3]);
-
-        if(iDims.elements() == 0 || oDims.elements() == 0) {
-            AF_ERROR("Elements are 0", AF_ERR_SIZE);
-        }
 
         Array<T> out = createEmptyArray<T>(oDims);
 
@@ -35,6 +31,9 @@ namespace cuda
             case AF_INTERP_BILINEAR:
                 kernel::resize<T, AF_INTERP_BILINEAR>(out, in);
                 break;
+            case AF_INTERP_LOWER:
+                kernel::resize<T, AF_INTERP_LOWER>(out, in);
+                break;
             default:
                 break;
         }
@@ -44,14 +43,20 @@ namespace cuda
 
 
 #define INSTANTIATE(T)                                                                            \
-    template Array<T> resize<T> (const Array<T> &in, const dim_type odim0, const dim_type odim1, \
+    template Array<T> resize<T> (const Array<T> &in, const dim_t odim0, const dim_t odim1, \
                                  const af_interp_type method);
 
 
     INSTANTIATE(float)
     INSTANTIATE(double)
+    INSTANTIATE(cfloat)
+    INSTANTIATE(cdouble)
     INSTANTIATE(int)
     INSTANTIATE(uint)
+    INSTANTIATE(intl)
+    INSTANTIATE(uintl)
     INSTANTIATE(uchar)
     INSTANTIATE(char)
+    INSTANTIATE(short)
+    INSTANTIATE(ushort)
 }

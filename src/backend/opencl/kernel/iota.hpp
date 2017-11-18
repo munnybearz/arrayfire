@@ -9,78 +9,75 @@
 
 #pragma once
 #include <kernel_headers/iota.hpp>
+#include <af/dim4.hpp>
 #include <program.hpp>
 #include <traits.hpp>
 #include <string>
-#include <mutex>
-#include <map>
-#include <dispatch.hpp>
+#include <cache.hpp>
+#include <common/dispatch.hpp>
 #include <Param.hpp>
 #include <debug_opencl.hpp>
 
 using cl::Buffer;
 using cl::Program;
 using cl::Kernel;
-using cl::make_kernel;
+using cl::KernelFunctor;
 using cl::EnqueueArgs;
 using cl::NDRange;
 using std::string;
 
 namespace opencl
 {
-    namespace kernel
-    {
-        // Kernel Launch Config Values
-        static const dim_type TX = 32;
-        static const dim_type TY = 8;
-        static const dim_type TILEX = 512;
-        static const dim_type TILEY = 32;
+namespace kernel
+{
+// Kernel Launch Config Values
+static const int IOTA_TX = 32;
+static const int IOTA_TY = 8;
+static const int TILEX = 512;
+static const int TILEY = 32;
 
-        template<typename T>
-        void iota(Param out, const dim4 &sdims, const dim4 &tdims)
-        {
-            try {
-                static std::once_flag compileFlags[DeviceManager::MAX_DEVICES];
-                static std::map<int, Program*>  iotaProgs;
-                static std::map<int, Kernel*> iotaKernels;
+template<typename T>
+void iota(Param out, const af::dim4 &sdims, const af::dim4 &tdims)
+{
+    std::string refName = std::string("iota_kernel_") + std::string(dtype_traits<T>::getName());
 
-                int device = getActiveDeviceId();
+    int device = getActiveDeviceId();
+    kc_entry_t entry = kernelCache(device, refName);
 
-                std::call_once( compileFlags[device], [device] () {
-                    std::ostringstream options;
-                    options << " -D T=" << dtype_traits<T>::getName();
-                    if (std::is_same<T, double>::value ||
-                        std::is_same<T, cdouble>::value) {
-                        options << " -D USE_DOUBLE";
-                    }
-                    Program prog;
-                    buildProgram(prog, iota_cl, iota_cl_len, options.str());
-                    iotaProgs[device]   = new Program(prog);
-                    iotaKernels[device] = new Kernel(*iotaProgs[device], "iota_kernel");
-                });
+    if (entry.prog==0 && entry.ker==0) {
+        std::ostringstream options;
 
-                auto iotaOp = make_kernel<Buffer, const KParam,
-                                          const dim_type, const dim_type, const dim_type, const dim_type,
-                                          const dim_type, const dim_type, const dim_type, const dim_type,
-                                          const dim_type, const dim_type> (*iotaKernels[device]);
+        options << " -D T=" << dtype_traits<T>::getName();
+        if (std::is_same<T, double>::value || std::is_same<T, cdouble>::value)
+            options << " -D USE_DOUBLE";
 
-                NDRange local(TX, TY, 1);
+        const char* ker_strs[] = {iota_cl};
+        const int   ker_lens[] = {iota_cl_len};
+        Program prog;
+        buildProgram(prog, 1, ker_strs, ker_lens, options.str());
+        entry.prog = new Program(prog);
+        entry.ker  = new Kernel(*entry.prog, "iota_kernel");
 
-                dim_type blocksPerMatX = divup(out.info.dims[0], TILEX);
-                dim_type blocksPerMatY = divup(out.info.dims[1], TILEY);
-                NDRange global(local[0] * blocksPerMatX * out.info.dims[2],
-                               local[1] * blocksPerMatY * out.info.dims[3],
-                               1);
-
-                iotaOp(EnqueueArgs(getQueue(), global, local),
-                       *out.data, out.info, sdims[0], sdims[1], sdims[2], sdims[3],
-                       tdims[0], tdims[1], tdims[2], tdims[3], blocksPerMatX, blocksPerMatY);
-
-                CL_DEBUG_FINISH(getQueue());
-            } catch (cl::Error err) {
-                CL_TO_AF_ERROR(err);
-                throw;
-            }
-        }
+        addKernelToCache(device, refName, entry);
     }
+
+    auto iotaOp = KernelFunctor<Buffer, const KParam,
+                                const int, const int, const int, const int,
+                                const int, const int, const int, const int,
+                                const int, const int> (*entry.ker);
+
+    NDRange local(IOTA_TX, IOTA_TY, 1);
+
+    int blocksPerMatX = divup(out.info.dims[0], TILEX);
+    int blocksPerMatY = divup(out.info.dims[1], TILEY);
+    NDRange global(local[0] * blocksPerMatX * out.info.dims[2],
+                   local[1] * blocksPerMatY * out.info.dims[3], 1);
+
+    iotaOp(EnqueueArgs(getQueue(), global, local),
+           *out.data, out.info, sdims[0], sdims[1], sdims[2], sdims[3],
+           tdims[0], tdims[1], tdims[2], tdims[3], blocksPerMatX, blocksPerMatY);
+
+    CL_DEBUG_FINISH(getQueue());
+}
+}
 }

@@ -8,8 +8,6 @@
  ********************************************************/
 
 #include <af/dim4.hpp>
-#include <af/defines.h>
-#include <ArrayInfo.hpp>
 #include <Array.hpp>
 #include <regions.hpp>
 #include <kernel/regions.hpp>
@@ -21,12 +19,8 @@ namespace opencl
 {
 
 template<typename T>
-Array<T> regions(const Array<uchar> &in, af_connectivity connectivity)
+Array<T> regions(const Array<char> &in, af_connectivity connectivity)
 {
-    if ((std::is_same<T, double>::value || std::is_same<T, cdouble>::value) &&
-        !isDoubleSupported(getActiveDeviceId())) {
-        OPENCL_NOT_SUPPORTED();
-    }
     ARG_ASSERT(2, (connectivity==AF_CONNECTIVITY_4 || connectivity==AF_CONNECTIVITY_8));
 
     const af::dim4 dims = in.dims();
@@ -45,14 +39,14 @@ Array<T> regions(const Array<uchar> &in, af_connectivity connectivity)
     return out;
 }
 
-#define INSTANTIATE(T)                                                                          \
-    template Array<T> regions<T>(const Array<uchar> &in, af_connectivity connectivity);
+#define INSTANTIATE(T)                                                                  \
+    template Array<T> regions<T>(const Array<char> &in, af_connectivity connectivity);
 
 INSTANTIATE(float )
 INSTANTIATE(double)
-INSTANTIATE(char  )
 INSTANTIATE(int   )
 INSTANTIATE(uint  )
-INSTANTIATE(uchar )
+INSTANTIATE(short)
+INSTANTIATE(ushort)
 
 }

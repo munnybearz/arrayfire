@@ -7,11 +7,10 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <af/array.h>
 #include <Array.hpp>
 
 namespace cpu
 {
     template<typename T>
-    Array<T> shift(const Array<T> &in, const af::dim4 &sdims);
+    Array<T> shift(const Array<T> &in, const int sdims[4]);
 }

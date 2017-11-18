@@ -8,15 +8,74 @@
  ********************************************************/
 #pragma once
 
-#include <af/defines.h>
+#include <cstdlib>
+#include <common/MemoryManager.hpp>
+
+#include <functional>
+#include <memory>
 namespace cuda
 {
-    template<typename T> T* memAlloc(const size_t &elements);
-    template<typename T> void memFree(T* ptr);
+template<typename T> void memFree(T* ptr);
 
-    template<typename T> T* pinnedAlloc(const size_t &elements);
-    template<typename T> void pinnedFree(T* ptr);
+template<typename T>
+using uptr = std::unique_ptr<T[], std::function<void(T[])>>;
 
-    static const unsigned MAX_BUFFERS   = 100;
-    static const unsigned MAX_BYTES     = (1 << 30);
+template<typename T>
+uptr<T> memAlloc(const size_t &elements);
+
+void *memAllocUser(const size_t &bytes);
+
+// Need these as 2 separate function and not a default argument
+// This is because it is used as the deleter in shared pointer
+// which cannot support default arguments
+
+void memFreeUser(void* ptr);
+
+void memLock(const void *ptr);
+void memUnlock(const void *ptr);
+bool isLocked(const void *ptr);
+
+template<typename T> T* pinnedAlloc(const size_t &elements);
+template<typename T> void pinnedFree(T* ptr);
+
+size_t getMaxBytes();
+unsigned getMaxBuffers();
+
+void deviceMemoryInfo(size_t *alloc_bytes, size_t *alloc_buffers,
+                      size_t *lock_bytes,  size_t *lock_buffers);
+void garbageCollect();
+void pinnedGarbageCollect();
+
+void printMemInfo(const char *msg, const int device);
+
+void setMemStepSize(size_t step_bytes);
+size_t getMemStepSize(void);
+
+bool checkMemoryLimit();
+
+class MemoryManager : public common::MemoryManager<cuda::MemoryManager>
+{
+    public:
+        MemoryManager();
+        ~MemoryManager();
+        int getActiveDeviceId();
+        size_t getMaxMemorySize(int id);
+        void *nativeAlloc(const size_t bytes);
+        void nativeFree(void *ptr);
+};
+
+// CUDA Pinned Memory does not depend on device
+// So we pass 1 as numDevices to the constructor so that it creates 1 vector
+// of memory_info
+// When allocating and freeing, it doesn't really matter which device is active
+class MemoryManagerPinned : public common::MemoryManager<MemoryManagerPinned>
+{
+    public:
+        MemoryManagerPinned();
+        ~MemoryManagerPinned();
+        int getActiveDeviceId();
+        size_t getMaxMemorySize(int id);
+        void *nativeAlloc(const size_t bytes);
+        void nativeFree(void *ptr);
+};
 }

@@ -10,7 +10,7 @@
 #include <af/dim4.hpp>
 #include <af/defines.h>
 #include <af/image.h>
-#include <err_common.hpp>
+#include <common/err_common.hpp>
 #include <backend.hpp>
 #include <handle.hpp>
 #include <reduce.hpp>
@@ -80,8 +80,8 @@ af_err af_gaussian_kernel(af_array *out,
                           const int rows, const int cols,
                           const double sigma_r, const double sigma_c)
 {
-    af_array res;
     try {
+        af_array res;
         res = getHandle<float>(gaussianKernel<float>(rows, cols, sigma_r, sigma_c));
         std::swap(*out, res);
     }CATCHALL;

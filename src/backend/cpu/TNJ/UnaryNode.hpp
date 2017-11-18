@@ -8,7 +8,6 @@
  ********************************************************/
 
 #pragma once
-#include <af/array.h>
 #include <optypes.hpp>
 #include <vector>
 #include <math.hpp>
@@ -16,13 +15,15 @@
 
 namespace cpu
 {
-
     template<typename To, typename Ti, af_op_t op>
     struct UnOp
     {
-        To eval(Ti in)
+        void eval(TNJ::array<To> &out,
+                  const TNJ::array<Ti> &in, int lim)
         {
-            return scalar<To>(0);
+            for (int i = 0; i < lim; i++) {
+                out[i] = To(in[i]);
+            }
         }
     };
 
@@ -30,43 +31,30 @@ namespace TNJ
 {
 
     template<typename To, typename Ti, af_op_t op>
-    class UnaryNode  : public Node
+    class UnaryNode  : public TNode<To>
     {
 
     protected:
-        Node_ptr m_child;
-        UnOp <To, Ti, op> m_op;
-        To m_val;
+        UnOp<To, Ti, op> m_op;
+        TNode<Ti> *m_child;
 
     public:
-        UnaryNode(Node_ptr in) :
-            Node(),
-            m_child(in),
-            m_val(0)
+        UnaryNode(Node_ptr child) :
+            TNode<To>(0, child->getHeight() + 1, {{child}}),
+            m_child(reinterpret_cast<TNode<Ti> *>(child.get()))
         {
         }
 
-        void *calc(int x, int y, int z, int w)
+        void calc(int x, int y, int z, int w, int lim)
         {
-            m_val = m_op.eval(*(Ti *)m_child->calc(x, y, z, w));
-            return (void *)(&m_val);
+            m_op.eval(this->m_val, m_child->m_val, lim);
         }
 
-        void getInfo(unsigned &len, unsigned &buf_count, unsigned &bytes)
+        void calc(int idx, int lim)
         {
-            if (m_is_eval) return;
-
-            m_child->getInfo(len, buf_count, bytes);
-            len++;
-
-            m_is_eval = true;
-            return;
+            m_op.eval(this->m_val, m_child->m_val, lim);
         }
 
-        void reset()
-        {
-            m_is_eval = false;
-        }
     };
 
 }

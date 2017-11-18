@@ -9,8 +9,6 @@
 
 #pragma once
 #include <af/dim4.hpp>
-#include <af/defines.h>
-#include <ArrayInfo.hpp>
 #include <complex>
 #include <err_opencl.hpp>
 #include <math.hpp>
@@ -57,11 +55,9 @@ CAST_FN(double)
         }                                       \
     };
 
-
 CAST_CFN(cfloat)
 CAST_CFN(cdouble)
 CAST_CFN(char)
-
 
 template<>
 struct CastOp<cfloat, cdouble>
@@ -71,7 +67,6 @@ struct CastOp<cfloat, cdouble>
         return "__convert_z2c";
     }
 };
-
 
 template<>
 struct CastOp<cdouble, cfloat>
@@ -90,7 +85,6 @@ struct CastOp<cfloat, cfloat>
         return "__convert_c2c";
     }
 };
-
 
 template<>
 struct CastOp<cdouble, cdouble>
@@ -115,7 +109,7 @@ struct CastWrapper
                                                   shortname<To>(true),
                                                   cop.name(),
                                                   in_node, af_cast_t);
-        return createNodeArray<To>(in.dims(), JIT::Node_ptr(reinterpret_cast<JIT::Node *>(node)));
+        return createNodeArray<To>(in.dims(), JIT::Node_ptr(node));
     }
 };
 

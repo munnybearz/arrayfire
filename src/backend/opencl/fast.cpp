@@ -8,12 +8,9 @@
  ********************************************************/
 
 #include <af/dim4.hpp>
-#include <af/defines.h>
 #include <af/features.h>
-#include <ArrayInfo.hpp>
 #include <Array.hpp>
 #include <err_opencl.hpp>
-#include <handle.hpp>
 #include <kernel/fast.hpp>
 
 using af::dim4;
@@ -38,9 +35,9 @@ unsigned fast(Array<float> &x_out, Array<float> &y_out, Array<float> &score_out,
                              thr, feature_ratio, edge);
 
     if (nfeat > 0) {
-        x_out = createParamArray<float>(x);
-        y_out = createParamArray<float>(y);
-        score_out = createParamArray<float>(score);
+        x_out = createParamArray<float>(x, true);
+        y_out = createParamArray<float>(y, true);
+        score_out = createParamArray<float>(score, true);
     }
 
     return nfeat;
@@ -57,5 +54,7 @@ INSTANTIATE(char  )
 INSTANTIATE(int   )
 INSTANTIATE(uint  )
 INSTANTIATE(uchar )
+INSTANTIATE(short )
+INSTANTIATE(ushort)
 
 }

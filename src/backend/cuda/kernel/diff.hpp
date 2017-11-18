@@ -8,7 +8,7 @@
  ********************************************************/
 
 #include <math.hpp>
-#include <dispatch.hpp>
+#include <common/dispatch.hpp>
 #include <Param.hpp>
 #include <err_cuda.hpp>
 #include <debug_cuda.hpp>
@@ -43,10 +43,10 @@ namespace cuda
                          const unsigned blocksPerMatX, const unsigned blocksPerMatY)
         {
             unsigned idz = blockIdx.x / blocksPerMatX;
-            unsigned idw = blockIdx.y / blocksPerMatY;
+            unsigned idw = (blockIdx.y + blockIdx.z * gridDim.y) / blocksPerMatY;
 
             unsigned blockIdx_x = blockIdx.x - idz * blocksPerMatX;
-            unsigned blockIdx_y = blockIdx.y - idw * blocksPerMatY;
+            unsigned blockIdx_y = (blockIdx.y + blockIdx.z * gridDim.y) - idw * blocksPerMatY;
 
             unsigned idx = threadIdx.x + blockIdx_x * blockDim.x;
             unsigned idy = threadIdx.y + blockIdx_y * blockDim.y;
@@ -72,7 +72,7 @@ namespace cuda
         // Wrapper functions
         ///////////////////////////////////////////////////////////////////////////
         template<typename T, unsigned dim, bool isDiff2>
-        void diff(Param<T> out, CParam<T> in, const dim_type indims)
+        void diff(Param<T> out, CParam<T> in, const int indims)
         {
             dim3 threads(TX, TY, 1);
 
@@ -80,18 +80,22 @@ namespace cuda
                 threads = dim3(TX * TY, 1, 1);
             }
 
-            dim_type blocksPerMatX = divup(out.dims[0], TX);
-            dim_type blocksPerMatY = divup(out.dims[1], TY);
+            int blocksPerMatX = divup(out.dims[0], TX);
+            int blocksPerMatY = divup(out.dims[1], TY);
             dim3 blocks(blocksPerMatX * out.dims[2],
                         blocksPerMatY * out.dims[3],
                         1);
 
-            const dim_type oElem = out.dims[0] * out.dims[1] * out.dims[2] * out.dims[3];
+            const int oElem = out.dims[0] * out.dims[1] * out.dims[2] * out.dims[3];
 
-            diff_kernel<T, dim, isDiff2> <<<blocks, threads>>>
-                (out, in, oElem, blocksPerMatX, blocksPerMatY);
+            const int maxBlocksY = cuda::getDeviceProp(cuda::getActiveDeviceId()).maxGridSize[1];
+            blocks.z = divup(blocks.y, maxBlocksY);
+            blocks.y = divup(blocks.y, blocks.z);
+
+            CUDA_LAUNCH((diff_kernel<T, dim, isDiff2>), blocks, threads,
+                out, in, oElem, blocksPerMatX, blocksPerMatY);
 
             POST_LAUNCH_CHECK();
         }
-}
+    }
 }

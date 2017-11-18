@@ -30,14 +30,14 @@ inline int idx(const int x, const int y)
 // Tests if a pixel x > p + thr
 inline int test_greater(const float x, const float p, const float thr)
 {
-    return (x >= p + thr);
+    return (x > p + thr);
 }
 
 // test_smaller()
 // Tests if a pixel x < p - thr
 inline int test_smaller(const float x, const float p, const float thr)
 {
-    return (x <= p - thr);
+    return (x < p - thr);
 }
 
 // test_pixel()
@@ -46,7 +46,7 @@ inline int test_smaller(const float x, const float p, const float thr)
 // Returns  1 when x > p + thr
 inline int test_pixel(__local T* local_image, const float p, const float thr, const int x, const int y)
 {
-    return -test_smaller((float)local_image[idx(x,y)], p, thr) | test_greater((float)local_image[idx(x,y)], p, thr);
+    return -test_smaller((float)local_image[idx(x,y)], p, thr) + test_greater((float)local_image[idx(x,y)], p, thr);
 }
 
 void locate_features_core(
@@ -165,7 +165,7 @@ void locate_features(
     unsigned lx = bx / 2 + 3;
     unsigned ly = by / 2 + 3;
 
-    load_shared_image(in, iInfo, local_image, ix, iy, bx, by, x, y, lx, ly);
+    load_shared_image(in + iInfo.offset, iInfo, local_image, ix, iy, bx, by, x, y, lx, ly);
     barrier(CLK_LOCAL_MEM_FENCE);
     locate_features_core(local_image, score,
                          iInfo, thr, x, y, edge);
@@ -292,10 +292,11 @@ __kernel void get_features(
             if (v == 0) continue;
 
             unsigned id = atomic_inc(&s_idx);
-            if (id >= total) return;
-            y_out[id] = x;
-            x_out[id] = y;
-            score_out[id] = v;
+            if (id < total) {
+                y_out[id] = x;
+                x_out[id] = y;
+                score_out[id] = v;
+            }
         }
     }
 }

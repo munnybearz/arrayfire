@@ -12,7 +12,6 @@
 #include <af/dim4.hpp>
 #include <af/traits.hpp>
 #include <vector>
-#include <iostream>
 #include <string>
 #include <testHelpers.hpp>
 
@@ -46,13 +45,13 @@ class Diff2 : public ::testing::Test
 };
 
 // create a list of types to be tested
-typedef ::testing::Types<float, cfloat, double, cdouble, int, unsigned, char, unsigned char> TestTypes;
+typedef ::testing::Types<float, cfloat, double, cdouble, int, unsigned, intl, uintl, char, unsigned char, short, ushort> TestTypes;
 
 // register the type list
 TYPED_TEST_CASE(Diff2, TestTypes);
 
-template<typename T, unsigned dim>
-void diff2Test(string pTestFile, bool isSubRef=false, const vector<af_seq> *seqv=NULL)
+template<typename T>
+void diff2Test(string pTestFile, unsigned dim, bool isSubRef=false, const vector<af_seq> *seqv=NULL)
 {
     if (noDoubleTests<T>()) return;
 
@@ -97,57 +96,57 @@ void diff2Test(string pTestFile, bool isSubRef=false, const vector<af_seq> *seqv
     // Delete
     delete[] outData;
 
-    if(inArray   != 0) af_destroy_array(inArray);
-    if(outArray  != 0) af_destroy_array(outArray);
-    if(tempArray != 0) af_destroy_array(tempArray);
+    if(inArray   != 0) af_release_array(inArray);
+    if(outArray  != 0) af_release_array(outArray);
+    if(tempArray != 0) af_release_array(tempArray);
 }
 
 TYPED_TEST(Diff2,Vector0)
 {
-    diff2Test<TypeParam, 0>(string(TEST_DIR"/diff2/vector0.test"));
+    diff2Test<TypeParam>(string(TEST_DIR"/diff2/vector0.test"), 0);
 }
 
 TYPED_TEST(Diff2,Matrix0)
 {
-    diff2Test<TypeParam, 0>(string(TEST_DIR"/diff2/matrix0.test"));
+    diff2Test<TypeParam>(string(TEST_DIR"/diff2/matrix0.test"), 0);
 }
 
 TYPED_TEST(Diff2,Matrix1)
 {
-    diff2Test<TypeParam, 1>(string(TEST_DIR"/diff2/matrix1.test"));
+    diff2Test<TypeParam>(string(TEST_DIR"/diff2/matrix1.test"), 1);
 }
 
 // Diff on 0 dimension
 TYPED_TEST(Diff2,Basic0)
 {
-    diff2Test<TypeParam, 0>(string(TEST_DIR"/diff2/basic0.test"));
+    diff2Test<TypeParam>(string(TEST_DIR"/diff2/basic0.test"), 0);
 }
 
 // Diff on 1 dimension
 TYPED_TEST(Diff2,Basic1)
 {
-    diff2Test<TypeParam, 1>(string(TEST_DIR"/diff2/basic1.test"));
+    diff2Test<TypeParam>(string(TEST_DIR"/diff2/basic1.test"), 1);
 }
 
 // Diff on 2 dimension
 TYPED_TEST(Diff2,Basic2)
 {
-    diff2Test<TypeParam, 2>(string(TEST_DIR"/diff2/basic2.test"));
+    diff2Test<TypeParam>(string(TEST_DIR"/diff2/basic2.test"), 2);
 }
 
 TYPED_TEST(Diff2,Subref0)
 {
-    diff2Test<TypeParam, 0>(string(TEST_DIR"/diff2/subref0.test"),true,&(this->subMat0));
+    diff2Test<TypeParam>(string(TEST_DIR"/diff2/subref0.test"), 0,true,&(this->subMat0));
 }
 
 TYPED_TEST(Diff2,Subref1)
 {
-    diff2Test<TypeParam, 1>(string(TEST_DIR"/diff2/subref1.test"),true,&(this->subMat1));
+    diff2Test<TypeParam>(string(TEST_DIR"/diff2/subref1.test"), 1,true,&(this->subMat1));
 }
 
 TYPED_TEST(Diff2,Subref2)
 {
-    diff2Test<TypeParam, 2>(string(TEST_DIR"/diff2/subref2.test"),true,&(this->subMat2));
+    diff2Test<TypeParam>(string(TEST_DIR"/diff2/subref2.test"), 2,true,&(this->subMat2));
 }
 
 template<typename T>
@@ -170,13 +169,41 @@ void diff2ArgsTest(string pTestFile)
     ASSERT_EQ(AF_ERR_ARG, af_diff2(&outArray, inArray, -1));
     ASSERT_EQ(AF_ERR_ARG, af_diff2(&outArray, inArray,  5));
 
-    if(inArray  != 0) af_destroy_array(inArray);
-    if(outArray != 0) af_destroy_array(outArray);
+    if(inArray  != 0) af_release_array(inArray);
+    if(outArray != 0) af_release_array(outArray);
 }
 
 TYPED_TEST(Diff2,InvalidArgs)
 {
     diff2ArgsTest<TypeParam>(string(TEST_DIR"/diff2/basic0.test"));
+}
+
+TEST(Diff2, DiffLargeDim)
+{
+    const size_t largeDim = 65535 * 32 + 1;
+
+    af::deviceGC();
+    {
+        af::array in = af::constant(1, largeDim);
+        af::array diff = af::diff2(in, 0);
+        float s = af::sum<float>(diff, 1);
+        ASSERT_EQ(s, 0.f);
+
+        in = af::constant(1, 1, largeDim);
+        diff = af::diff2(in, 1);
+        s = af::sum<float>(diff, 1);
+        ASSERT_EQ(s, 0.f);
+
+        in = af::constant(1, 1, 1, largeDim);
+        diff = af::diff2(in, 2);
+        s = af::sum<float>(diff, 1);
+        ASSERT_EQ(s, 0.f);
+
+        in = af::constant(1, 1, 1, 1, largeDim);
+        diff = af::diff2(in, 3);
+        s = af::sum<float>(diff, 1);
+        ASSERT_EQ(s, 0.f);
+    }
 }
 
 ////////////////////////////////// CPP ////////////////////////////////////////

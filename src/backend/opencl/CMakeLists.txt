@@ -1,191 +1,535 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
-PROJECT(ARRAYFIRE)
+# Copyright (c) 2017, ArrayFire
+# All rights reserved.
+#
+# This file is distributed under 3-clause BSD license.
+# The complete license agreement can be obtained at:
+# http://arrayfire.com/licenses/BSD-3-Clause
 
-FIND_PACKAGE(OpenCL REQUIRED)
+include(InternalUtils)
+if("${Boost_VERSION}" VERSION_LESS 106100)
+  dependency_check(Boost_FOUND "Boost not found.")
+  include(build_boost_compute)
+endif()
 
-INCLUDE("${CMAKE_MODULE_PATH}/CLKernelToH.cmake")
+set(OPENCL_BLAS_LIBRARY clBLAS CACHE STRING "Select OpenCL BLAS back-end")
+set_property(CACHE OPENCL_BLAS_LIBRARY PROPERTY STRINGS "clBLAS" "CLBlast")
 
-IF(NOT UNIX)
-  ADD_DEFINITIONS(-DAFDLL)
-ENDIF()
+include(build_clFFT)
 
-ADD_DEFINITIONS(-DAF_OPENCL
-                -D__CL_ENABLE_EXCEPTIONS)
+dependency_check(OpenCL_FOUND "OpenCL not found.")
 
-# clBLAS and clFFT create packages when their `make install` step is executed,
-# rather than installing to system directories. Thus we have special find
-# and install methods for these libraries.
-FIND_PACKAGE(CLBLAS REQUIRED)
-INCLUDE_DIRECTORIES(${CLBLAS_INCLUDE_DIRS})
-LINK_DIRECTORIES(${CLBLAS_LIBRARY_DIR})
-# Custom install command
-INSTALL(DIRECTORY "${CLBLAS_PACKAGE_DIR}/include/" DESTINATION include 
-    COMPONENT headers)
-IF(UNIX)
-    FILE(GLOB CLBLAS_LIBS "${CLBLAS_PACKAGE_DIR}/lib64/*${CMAKE_SHARED_LIBRARY_SUFFIX}*")
-ELSEIF(WIN32)
-    FILE(GLOB CLBLAS_LIB "${CLBLAS_PACKAGE_DIR}/lib64/import/*${CMAKE_STATIC_LIBRARY_SUFFIX}")
-    FILE(GLOB CLBLAS_DLL "${CLBLAS_PACKAGE_DIR}/bin/*${CMAKE_SHARED_LIBRARY_SUFFIX}")
-  LIST(APPEND CLBLAS_LIBS ${CLBLAS_LIB} ${CLBLAS_DLL})
-ENDIF(UNIX)
-INSTALL(FILES ${CLBLAS_LIBS} DESTINATION lib COMPONENT libraries)
+file(GLOB kernel_src kernel/*.cl kernel/KParam.hpp)
 
-FIND_PACKAGE(clFFT REQUIRED)
-INCLUDE_DIRECTORIES(${CLFFT_INCLUDE_DIRS})
-LINK_DIRECTORIES(${CLFFT_LIBRARY_DIR})
-# Custom install command
-INSTALL(DIRECTORY "${CLFFT_BUILD_DIR}/package/include/" DESTINATION include
-    COMPONENT headers)
-IF(UNIX)
-  FILE(GLOB CLFFT_LIBS "${CLFFT_BUILD_DIR}/package/lib64/*${CMAKE_SHARED_LIBRARY_SUFFIX}*")
-ELSE(UNIX)
-  IF(WIN32)
-    FILE(GLOB CLFFT_LIB "${CLFFT_BUILD_DIR}/package/lib64/import/*${CMAKE_STATIC_LIBRARY_SUFFIX}")
-    FILE(GLOB CLFFT_DLL "${CLFFT_BUILD_DIR}/package/bin/*${CMAKE_SHARED_LIBRARY_SUFFIX}")
-    LIST(APPEND CLFFT_LIBS ${CLFFT_LIB} ${CLFFT_DLL})
-  ENDIF(WIN32)
-ENDIF(UNIX)
-INSTALL(FILES ${CLFFT_LIBS} DESTINATION lib COMPONENT libraries)
-
-ADD_DEFINITIONS( -DBOOST_ALL_NO_LIB )
-SET(Boost_USE_STATIC_LIBS OFF)
-FIND_PACKAGE(Boost 1.48 REQUIRED)
-
-FIND_PACKAGE(BoostCompute REQUIRED)
-
-SET( cl_kernel_headers
+set( kernel_headers_dir
     "kernel_headers")
 
-INCLUDE_DIRECTORIES(
-    ${CMAKE_INCLUDE_PATH}
-    "${CMAKE_SOURCE_DIR}/src/backend/opencl"
-    ${OPENCL_INCLUDE_DIRS}
-    "${CMAKE_CURRENT_BINARY_DIR}"
-    ${CLBLAS_INCLUDE_DIR}
-    ${CLFFT_INCLUDE_DIRS}
-    ${Boost_INCLUDE_DIR}
-    ${BoostCompute_INCLUDE_DIR}
-    )
+include(CLKernelToH)
 
-FILE(GLOB opencl_headers
-  "*.hpp"
-    "*.h")
-FILE(GLOB opencl_sources
-    "*.cpp")
-
-FILE(GLOB jit_sources
-    "jit/*.hpp")
-
-FILE(GLOB kernel_headers
-    "kernel/*.hpp")
-
-FILE(GLOB opencl_kernels
-    "kernel/*.cl")
-
-FILE(GLOB kernel_sources
-     "kernel/*.cpp")
-
-FILE(GLOB conv_ker_headers
-    "kernel/convolve/*.hpp")
-
-FILE(GLOB conv_ker_sources
-     "kernel/convolve/*.cpp")
-
-source_group(backend\\opencl\\Headers FILES ${opencl_headers})
-source_group(backend\\opencl\\Sources FILES ${opencl_sources})
-source_group(backend\\opencl\\JIT FILES ${jit_sources})
-source_group(backend\\opencl\\kernel\\Headers FILES ${kernel_headers})
-source_group(backend\\opencl\\kernel\\cl FILES ${opencl_kernels})
-source_group(backend\\opencl\\kernel\\Sources FILES ${kernel_sources})
-source_group(backend\\opencl\\kernel\\convolve\\Headers FILES ${conv_ker_headers})
-source_group(backend\\opencl\\kernel\\convolve\\Sources FILES ${conv_ker_sources})
-
-FILE(GLOB backend_headers
-    "../*.hpp"
-    "../*.h"
-    )
-
-FILE(GLOB backend_sources
-    "../*.cpp"
-    )
-source_group(backend\\Headers FILES ${backend_headers})
-source_group(backend\\Sources FILES ${backend_sources})
-
-FILE(GLOB c_headers
-    "../../api/c/*.hpp"
-    "../../api/c/*.h"
-    )
-
-FILE(GLOB c_sources
-    "../../api/c/*.cpp"
-    )
-source_group(api\\c\\Headers FILES ${c_headers})
-source_group(api\\c\\Sources FILES ${c_sources})
-
-
-FILE(GLOB cpp_sources
-    "../../api/cpp/*.cpp"
-    )
-source_group(api\\cpp\\Sources FILES ${cpp_sources})
-
-FILE(GLOB kernel_src ${opencl_kernels} "kernel/KParam.hpp")
-
-CL_KERNEL_TO_H(
+cl_kernel_to_h(
     SOURCES ${kernel_src}
     VARNAME kernel_files
     EXTENSION "hpp"
-    OUTPUT_DIR ${cl_kernel_headers}
+    OUTPUT_DIR ${kernel_headers_dir}
     TARGETS cl_kernel_targets
     NAMESPACE "opencl"
-    EOF "0"
     )
 
-# OS Definitions
-IF(UNIX)
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -pthread")
-ELSE(${UNIX}) #Windows
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-ENDIF()
+include(kernel/scan_by_key/CMakeLists.txt)
+include(kernel/sort_by_key/CMakeLists.txt)
+
+add_library(afopencl "")
+add_library(ArrayFire::afopencl ALIAS afopencl)
+
+target_sources(afopencl
+  PRIVATE
+    Array.cpp
+    Array.hpp
+    Param.cpp
+    Param.hpp
+    all.cpp
+    any.cpp
+    api.cpp
+    approx.cpp
+    approx.hpp
+    arith.hpp
+    assign.cpp
+    assign.hpp
+    backend.hpp
+    bilateral.cpp
+    bilateral.hpp
+    binary.hpp
+    blas.cpp
+    blas.hpp
+    cache.hpp
+    canny.cpp
+    canny.hpp
+    cast.hpp
+    cholesky.cpp
+    cholesky.hpp
+    clfft.cpp
+    clfft.hpp
+    complex.hpp
+    convolve.cpp
+    convolve.hpp
+    convolve_separable.cpp
+    copy.cpp
+    copy.hpp
+    count.cpp
+    debug_opencl.hpp
+    diagonal.cpp
+    diagonal.hpp
+    diff.cpp
+    diff.hpp
+    dilate.cpp
+    dilate3d.cpp
+    erode.cpp
+    erode3d.cpp
+    err_clblas.hpp
+    err_clblast.hpp
+    err_opencl.hpp
+    errorcodes.cpp
+    errorcodes.hpp
+    exampleFunction.cpp
+    exampleFunction.hpp
+    fast.cpp
+    fast.hpp
+    fft.cpp
+    fft.hpp
+    fftconvolve.cpp
+    fftconvolve.hpp
+    gradient.cpp
+    gradient.hpp
+    harris.cpp
+    harris.hpp
+    histogram.cpp
+    histogram.hpp
+    homography.cpp
+    homography.hpp
+    hsv_rgb.cpp
+    hsv_rgb.hpp
+    identity.cpp
+    identity.hpp
+    iir.cpp
+    iir.hpp
+    index.cpp
+    index.hpp
+    inverse.cpp
+    inverse.hpp
+    iota.cpp
+    iota.hpp
+    ireduce.cpp
+    ireduce.hpp
+    jit.cpp
+    join.cpp
+    join.hpp
+    logic.hpp
+    lookup.cpp
+    lookup.hpp
+    lu.cpp
+    lu.hpp
+    match_template.cpp
+    match_template.hpp
+    math.cpp
+    math.hpp
+    max.cpp
+    mean.cpp
+    mean.hpp
+    meanshift.cpp
+    meanshift.hpp
+    medfilt.cpp
+    medfilt.hpp
+    memory.cpp
+    memory.hpp
+    min.cpp
+    moments.cpp
+    moments.hpp
+    morph.hpp
+    morph3d_impl.hpp
+    morph_impl.hpp
+    nearest_neighbour.cpp
+    nearest_neighbour.hpp
+    orb.cpp
+    orb.hpp
+    platform.cpp
+    platform.hpp
+    print.hpp
+    product.cpp
+    program.cpp
+    program.hpp
+    qr.cpp
+    qr.hpp
+    random_engine.cpp
+    random_engine.hpp
+    range.cpp
+    range.hpp
+    reduce.hpp
+    reduce_impl.hpp
+    regions.cpp
+    regions.hpp
+    reorder.cpp
+    reorder.hpp
+    resize.cpp
+    resize.hpp
+    rotate.cpp
+    rotate.hpp
+    scalar.hpp
+    scan.cpp
+    scan.hpp
+    scan_by_key.cpp
+    scan_by_key.hpp
+    select.cpp
+    select.hpp
+    set.cpp
+    set.hpp
+    shift.cpp
+    shift.hpp
+    sift.cpp
+    sift.hpp
+    sobel.cpp
+    sobel.hpp
+    solve.cpp
+    solve.hpp
+    sort.cpp
+    sort.hpp
+    sort_by_key.cpp
+    sort_by_key.hpp
+    sort_index.cpp
+    sort_index.hpp
+    sparse.cpp
+    sparse.hpp
+    sparse_arith.cpp
+    sparse_arith.hpp
+    sparse_blas.cpp
+    sparse_blas.hpp
+    sum.cpp
+    susan.cpp
+    susan.hpp
+    svd.cpp
+    svd.hpp
+    tile.cpp
+    tile.hpp
+    traits.hpp
+    transform.cpp
+    transform.hpp
+    transpose.cpp
+    transpose.hpp
+    transpose_inplace.cpp
+    triangle.cpp
+    triangle.hpp
+    types.cpp
+    types.hpp
+    unary.hpp
+    unwrap.cpp
+    unwrap.hpp
+    where.cpp
+    where.hpp
+    wrap.cpp
+    wrap.hpp
+    )
 
 
-ADD_LIBRARY(afopencl SHARED
-            ${opencl_headers}
-            ${opencl_sources}
-            ${jit_sources}
-            ${kernel_headers}
-            ${opencl_kernels}
-            ${kernel_sources}
-            ${conv_ker_headers}
-            ${conv_ker_sources}
-            ${backend_headers}
-            ${backend_sources}
-            ${c_sources}
-            ${c_headers}
-            ${cpp_sources}
-            )
+target_sources(afopencl
+  PRIVATE
+    kernel/KParam.hpp
+    kernel/approx.hpp
+    kernel/assign.hpp
+    kernel/bilateral.hpp
+    kernel/canny.hpp
+    kernel/config.cpp
+    kernel/config.hpp
+    kernel/convolve.hpp
+    kernel/convolve_separable.cpp
+    kernel/convolve_separable.hpp
+    kernel/cscmm.hpp
+    kernel/cscmv.hpp
+    kernel/csrmm.hpp
+    kernel/csrmv.hpp
+    kernel/diagonal.hpp
+    kernel/diff.hpp
+    kernel/exampleFunction.hpp
+    kernel/fast.hpp
+    kernel/fftconvolve.hpp
+    kernel/gradient.hpp
+    kernel/harris.hpp
+    kernel/histogram.hpp
+    kernel/homography.hpp
+    kernel/hsv_rgb.hpp
+    kernel/identity.hpp
+    kernel/iir.hpp
+    kernel/index.hpp
+    kernel/interp.hpp
+    kernel/iota.hpp
+    kernel/ireduce.hpp
+    kernel/join.hpp
+    kernel/laset.hpp
+    #kernel/laset_band.hpp
+    kernel/laswp.hpp
+    kernel/lookup.hpp
+    kernel/lu_split.hpp
+    kernel/match_template.hpp
+    kernel/mean.hpp
+    kernel/meanshift.hpp
+    kernel/medfilt.hpp
+    kernel/memcopy.hpp
+    kernel/moments.hpp
+    kernel/morph.hpp
+    kernel/names.hpp
+    kernel/nearest_neighbour.hpp
+    kernel/orb.hpp
+    kernel/random_engine.hpp
+    kernel/range.hpp
+    kernel/reduce.hpp
+    kernel/regions.hpp
+    kernel/reorder.hpp
+    kernel/resize.hpp
+    kernel/rotate.hpp
+    kernel/scan_dim.hpp
+    kernel/scan_dim_by_key.hpp
+    kernel/scan_dim_by_key_impl.hpp
+    kernel/scan_first.hpp
+    kernel/scan_first_by_key.hpp
+    kernel/scan_first_by_key_impl.hpp
+    kernel/select.hpp
+    kernel/shift.hpp
+    kernel/sobel.hpp
+    kernel/sort.hpp
+    kernel/sort_by_key.hpp
+    kernel/sort_by_key_impl.hpp
+    kernel/sort_helper.hpp
+    kernel/sparse.hpp
+    kernel/sparse_arith.hpp
+    kernel/susan.hpp
+    kernel/swapdblk.hpp
+    kernel/tile.hpp
+    kernel/transform.hpp
+    kernel/transpose.hpp
+    kernel/transpose_inplace.hpp
+    kernel/triangle.hpp
+    kernel/unwrap.hpp
+    kernel/where.hpp
+    kernel/wrap.hpp
 
-ADD_DEPENDENCIES(afopencl ${cl_kernel_targets})
+    kernel/convolve/conv1.cpp
+    kernel/convolve/conv2_b8.cpp
+    kernel/convolve/conv2_c32.cpp
+    kernel/convolve/conv2_c64.cpp
+    kernel/convolve/conv2_f32.cpp
+    kernel/convolve/conv2_f64.cpp
+    kernel/convolve/conv2_impl.hpp
+    kernel/convolve/conv2_s16.cpp
+    kernel/convolve/conv2_s32.cpp
+    kernel/convolve/conv2_s64.cpp
+    kernel/convolve/conv2_u16.cpp
+    kernel/convolve/conv2_u32.cpp
+    kernel/convolve/conv2_u64.cpp
+    kernel/convolve/conv2_u8.cpp
+    kernel/convolve/conv3.cpp
+    kernel/convolve/conv_common.hpp
+    )
 
-TARGET_LINK_LIBRARIES(afopencl ${OPENCL_LIBRARIES} ${lib_deps} ${CLBLAS_LIBRARIES} ${CLFFT_LIBRARIES} ${CMAKE_DL_LIBS} ${Boost_LIBRARIES})
+target_sources(afopencl
+  PRIVATE
+    JIT/BinaryNode.hpp
+    JIT/BufferNode.hpp
+    JIT/Node.hpp
+    JIT/ScalarNode.hpp
+    JIT/UnaryNode.hpp
+  )
 
-# locally built but not installed libraries (clBLAS and clFFT) must NOT appear in the
-# link interface. The best option would be to use LINK_PRIVATE, but unfortunately
-# it is not available for older cmake than 2.8.7, so they must be remove from
-# the link interface manually. Both LINK_INTERFACE_LIBRARIES and INTERFACE_LINK_LIBRARIES
-# are used to keep it working with older cmake versions that 2.8.12 and avoid
-# warnings on newer versions - see CMP0022
-FOREACH(property LINK_INTERFACE_LIBRARIES INTERFACE_LINK_LIBRARIES)
-  GET_TARGET_PROPERTY(value afopencl ${property})
-  IF(value)
-    LIST(REMOVE_ITEM value ${CLBLAS_LIBRARIES} ${CLFFT_LIBRARIES})
-    SET_TARGET_PROPERTIES(afopencl PROPERTIES LINK_INTERFACE_LIBRARIES "${value}")
-    SET_TARGET_PROPERTIES(afopencl PROPERTIES INTERFACE_LINK_LIBRARIES "${value}")
-  ENDIF()
-ENDFOREACH()
+target_sources(afopencl
+  PRIVATE
+    ${kernel_files}
+  )
 
-INSTALL(TARGETS afopencl EXPORT OpenCL DESTINATION lib COMPONENT libraries)
+target_sources(afopencl
+  PRIVATE
+    cpu/cpu_blas.cpp
+    cpu/cpu_blas.hpp
+    cpu/cpu_cholesky.cpp
+    cpu/cpu_cholesky.hpp
+    cpu/cpu_helper.hpp
+    cpu/cpu_inverse.cpp
+    cpu/cpu_inverse.hpp
+    cpu/cpu_lu.cpp
+    cpu/cpu_lu.hpp
+    cpu/cpu_qr.cpp
+    cpu/cpu_qr.hpp
+    cpu/cpu_solve.cpp
+    cpu/cpu_solve.hpp
+    cpu/cpu_sparse_blas.cpp
+    cpu/cpu_sparse_blas.hpp
+    cpu/cpu_svd.cpp
+    cpu/cpu_svd.hpp
+    cpu/cpu_triangle.hpp
+  )
 
-export(TARGETS afopencl FILE ArrayFireOpenCL.cmake)
-INSTALL(EXPORT OpenCL DESTINATION ${ARRAYFIRE_CMAKE_DIR} 
-    COMPONENT cmake
-    FILE ArrayFireOpenCL.cmake)
+target_include_directories(afopencl
+  PUBLIC
+    $<BUILD_INTERFACE:${ArrayFire_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${ArrayFire_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:${AF_INSTALL_INC_DIR}>
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+    magma
+    ../../api/c
+    ../../../include
+  )
+
+add_dependencies(afopencl ${cl_kernel_targets})
+add_dependencies(opencl_scan_by_key ${cl_kernel_targets} cl2hpp)
+add_dependencies(opencl_sort_by_key ${cl_kernel_targets} cl2hpp)
+
+set_target_properties(afopencl PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+target_compile_definitions(afopencl
+  PRIVATE
+    CL_USE_DEPRECATED_OPENCL_1_2_APIS
+    __CL_ENABLE_EXCEPTIONS
+  )
+
+target_link_libraries(afopencl
+  PRIVATE
+    c_api_interface
+    cpp_api_interface
+    OpenCL::OpenCL
+    OpenCL::cl2hpp
+    afcommon_interface
+    clFFT::clFFT
+    opencl_scan_by_key
+    opencl_sort_by_key
+    Boost::boost
+    Threads::Threads
+    )
+
+if(OPENCL_BLAS_LIBRARY STREQUAL "clBLAS")
+  include(build_clBLAS)
+  target_compile_definitions(afopencl PRIVATE USE_CLBLAS)
+  target_link_libraries(afopencl
+    PRIVATE
+      clBLAS::clBLAS)
+elseif(OPENCL_BLAS_LIBRARY STREQUAL "CLBlast")
+  include(build_CLBlast)
+  target_compile_definitions(afopencl PRIVATE USE_CLBLAST)
+  target_link_libraries(afopencl
+    PRIVATE
+      CLBlast)
+    add_dependencies(afopencl CLBlast-ext)
+endif()
+
+
+if(BUILD_NONFREE)
+  target_sources(afopencl PRIVATE kernel/sift_nonfree.hpp)
+  target_compile_definitions(afopencl PRIVATE AF_BUILD_NONFREE_SIFT)
+endif()
+
+if(BUILD_GRAPHICS)
+  target_sources(afopencl
+    PRIVATE
+      GraphicsResourceManager.hpp
+      GraphicsResourceManager.cpp
+      hist_graphics.cpp
+      hist_graphics.hpp
+      image.cpp
+      image.hpp
+      plot.cpp
+      plot.hpp
+      surface.cpp
+      surface.hpp
+      vector_field.cpp
+      vector_field.hpp
+    )
+endif()
+
+if(LAPACK_FOUND)
+  target_sources(afopencl
+    PRIVATE
+      magma/gebrd.cpp
+      magma/geqrf2.cpp
+      magma/geqrf3.cpp
+      magma/getrf.cpp
+      magma/getrs.cpp
+      magma/labrd.cpp
+      magma/larfb.cpp
+      magma/laset.cpp
+      #magma/laset_band.cpp
+      magma/laswp.cpp
+      magma/magma.h
+      magma/magma_blas.h
+      magma/magma_blas_clblas.h
+      magma/magma_blas_clblast.h
+      magma/magma_common.h
+      magma/magma_cpu_blas.h
+      magma/magma_cpu_lapack.h
+      magma/magma_data.h
+      magma/magma_helper.cpp
+      magma/magma_helper.h
+      magma/magma_sync.h
+      magma/magma_types.h
+      magma/potrf.cpp
+      magma/swapdblk.cpp
+      magma/transpose.cpp
+      magma/transpose_inplace.cpp
+      magma/ungqr.cpp
+      magma/unmqr.cpp
+      #magma/unmqr2.cpp
+
+    )
+
+  if(USE_OPENCL_MKL)
+    dependency_check(MKL_FOUND "MKL not found")
+    target_compile_definitions(afopencl PRIVATE USE_MKL)
+
+    # TODO(umar) Find a better way to determine BLAS selection
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
+      (CMAKE_CXX_COMPILER_ID STREQUAL "Intel" AND (UNIX AND NOT APPLE)))
+      # MKL requires multiple passes when linking with the static libs. This can be
+      # done in CMake using LINK_INTERFACE_MULTIPLICITY but that will require
+      # changine the way FindCBLAS works. This can also be done using the
+      # --start-group and --end-group linker around the libraries in the linking
+      # step.
+      #
+      # TODO(umar): Change the way CBLAS libraries are found and linked
+      set(CBLAS_LIBRARIES -Wl,--start-group ${CBLAS_LIBRARIES} -Wl,--end-group)
+    endif()
+  else()
+    if(USE_CPU_F77_BLAS)
+      target_compile_definitions(afopencl PRIVATE USE_F77_BLAS)
+    endif()
+
+    dependency_check(CBLAS_LIBRARIES "CBLAS not found.")
+  endif()
+
+  target_compile_definitions(
+    afopencl
+    PRIVATE
+      WITH_OPENCL_LINEAR_ALGEBRA
+    )
+
+  target_link_libraries(afopencl
+    PRIVATE
+      afcommon_lapack_interface
+      ${CBLAS_LIBRARIES}
+    )
+  target_include_directories(afopencl
+    PRIVATE
+      ${CBLAS_INCLUDE_DIR})
+endif(LAPACK_FOUND)
+
+install(TARGETS afopencl
+  EXPORT ArrayFireOpenCLTargets
+  COMPONENT opencl
+  PUBLIC_HEADER DESTINATION af
+  RUNTIME DESTINATION ${AF_INSTALL_BIN_DIR}
+  LIBRARY DESTINATION ${AF_INSTALL_LIB_DIR}
+  ARCHIVE DESTINATION ${AF_INSTALL_LIB_DIR}
+  FRAMEWORK DESTINATION framework
+  INCLUDES DESTINATION ${AF_INSTALL_INC_DIR}
+  )
+
+source_group(include REGULAR_EXPRESSION ${ArrayFire_SOURCE_DIR}/include/*)
+source_group(api\\cpp REGULAR_EXPRESSION ${ArrayFire_SOURCE_DIR}/src/api/cpp/*)
+source_group(api\\c   REGULAR_EXPRESSION ${ArrayFire_SOURCE_DIR}/src/api/c/*)
+source_group(backend  REGULAR_EXPRESSION ${ArrayFire_SOURCE_DIR}/src/backend/common/*|${CMAKE_CURRENT_SOURCE_DIR}/*)
+source_group(backend\\kernel  REGULAR_EXPRESSION ${CMAKE_CURRENT_SOURCE_DIR}/kernel/*|${CMAKE_CURRENT_SOURCE_DIR}/kernel/sort_by_key/*|${CMAKE_CURRENT_SOURCE_DIR}/kernel/scan_by_key/*)
+source_group("generated files" FILES ${ArrayFire_BINARY_DIR}/version.hpp ${ArrayFire_BINARY_DIR}/include/af/version.h)

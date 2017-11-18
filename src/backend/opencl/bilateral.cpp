@@ -8,8 +8,6 @@
  ********************************************************/
 
 #include <af/dim4.hpp>
-#include <af/defines.h>
-#include <ArrayInfo.hpp>
 #include <Array.hpp>
 #include <bilateral.hpp>
 #include <kernel/bilateral.hpp>
@@ -22,10 +20,6 @@ namespace opencl
 template<typename inType, typename outType, bool isColor>
 Array<outType> bilateral(const Array<inType> &in, const float &s_sigma, const float &c_sigma)
 {
-    if ((std::is_same<inType, double>::value || std::is_same<inType, cdouble>::value) &&
-        !isDoubleSupported(getActiveDeviceId())) {
-        OPENCL_NOT_SUPPORTED();
-    }
     Array<outType> out       = createEmptyArray<outType>(in.dims());
     kernel::bilateral<inType, outType, isColor>(out, in, s_sigma, c_sigma);
     return out;
@@ -41,5 +35,7 @@ INSTANTIATE(char  ,  float)
 INSTANTIATE(int   ,  float)
 INSTANTIATE(uint  ,  float)
 INSTANTIATE(uchar ,  float)
+INSTANTIATE(short ,  float)
+INSTANTIATE(ushort,  float)
 
 }

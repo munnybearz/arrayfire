@@ -7,8 +7,6 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <af/defines.h>
-#include <af/array.h>
 #include <af/dim4.hpp>
 #include <Array.hpp>
 #include <optypes.hpp>
@@ -23,9 +21,14 @@ namespace cpu
     template<typename T>                        \
     struct BinOp<T, T, OP>                      \
     {                                           \
-        T eval(T lhs, T rhs)                    \
+        void eval(TNJ::array<T> &out,           \
+                  const TNJ::array<T> &lhs,     \
+                  const TNJ::array<T> &rhs,     \
+                  int lim)                      \
         {                                       \
-            return lhs op rhs;                  \
+            for (int i = 0; i < lim; i++) {     \
+                out[i] = lhs[i] op rhs[i];      \
+            }                                   \
         }                                       \
     };                                          \
 
@@ -55,9 +58,14 @@ template<> STATIC_ double __rem<double>(double lhs, double rhs) { return remaind
     template<typename T>                        \
     struct BinOp<T, T, OP>                      \
     {                                           \
-        T eval(T lhs, T rhs)                    \
+        void eval(TNJ::array<T> &out,           \
+                  const TNJ::array<T> &lhs,     \
+                  const TNJ::array<T> &rhs,     \
+                  int lim)                      \
         {                                       \
-            return FN(lhs, rhs);                \
+            for (int i = 0; i < lim; i++) {     \
+                out[i] = FN(lhs[i] , rhs[i]);   \
+            }                                   \
         }                                       \
     };                                          \
 

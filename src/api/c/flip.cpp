@@ -11,10 +11,11 @@
 #include <cassert>
 
 #include <af/array.h>
+#include <af/data.h>
 #include <af/index.h>
 #include <af/seq.h>
-#include <ArrayInfo.hpp>
-#include <err_common.hpp>
+#include <common/ArrayInfo.hpp>
+#include <common/err_common.hpp>
 #include <handle.hpp>
 #include <backend.hpp>
 #include <Array.hpp>
@@ -49,10 +50,10 @@ af_err af_flip(af_array *result, const af_array in, const unsigned dim)
 {
     af_array out;
     try {
-        ArrayInfo in_info = getInfo(in);
+        const ArrayInfo& in_info = getInfo(in);
 
         if (in_info.ndims() <= dim) {
-            *result = weakCopy(in);
+            *result = retain(in);
             return AF_SUCCESS;
         }
 
@@ -66,12 +67,16 @@ af_err af_flip(af_array *result, const af_array in, const unsigned dim)
         case b8:     out = flipArray<char>    (in, dim);  break;
         case s32:    out = flipArray<int>     (in, dim);  break;
         case u32:    out = flipArray<unsigned>(in, dim);  break;
+        case s64:    out = flipArray<intl>    (in, dim);  break;
+        case u64:    out = flipArray<uintl>   (in, dim);  break;
+        case s16:    out = flipArray<short>   (in, dim);  break;
+        case u16:    out = flipArray<ushort>  (in, dim);  break;
         case u8:     out = flipArray<uchar>   (in, dim);  break;
         default:    TYPE_ERROR(1, in_type);
         }
+        swap(*result, out);
     }
     CATCHALL
 
-    swap(*result, out);
     return AF_SUCCESS;
 }

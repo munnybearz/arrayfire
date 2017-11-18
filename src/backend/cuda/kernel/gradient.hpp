@@ -8,7 +8,7 @@
  ********************************************************/
 
 #include <math.hpp>
-#include <dispatch.hpp>
+#include <common/dispatch.hpp>
 #include <Param.hpp>
 #include <err_cuda.hpp>
 #include <debug_cuda.hpp>
@@ -26,19 +26,19 @@ namespace cuda
         template<typename T>
         __global__
         void gradient_kernel(Param<T> grad0, Param<T> grad1, CParam<T> in,
-                             const dim_type blocksPerMatX, const dim_type blocksPerMatY)
+                             const int blocksPerMatX, const int blocksPerMatY)
         {
-            const dim_type idz = blockIdx.x / blocksPerMatX;
-            const dim_type idw = blockIdx.y / blocksPerMatY;
+            const int idz =  blockIdx.x / blocksPerMatX;
+            const int idw = (blockIdx.y + blockIdx.z * gridDim.y) / blocksPerMatY;
 
-            const dim_type blockIdx_x = blockIdx.x - idz * blocksPerMatX;
-            const dim_type blockIdx_y = blockIdx.y - idw * blocksPerMatY;
+            const int blockIdx_x =  blockIdx.x - idz * blocksPerMatX;
+            const int blockIdx_y = (blockIdx.y + blockIdx.z * gridDim.y) - idw * blocksPerMatY;
 
-            const dim_type xB = blockIdx_x * blockDim.x;
-            const dim_type yB = blockIdx_y * blockDim.y;
+            const int xB = blockIdx_x * blockDim.x;
+            const int yB = blockIdx_y * blockDim.y;
 
-            const dim_type idx = threadIdx.x + xB;
-            const dim_type idy = threadIdx.y + yB;
+            const int idx = threadIdx.x + xB;
+            const int idy = threadIdx.y + yB;
 
             bool cond = (idx >= in.dims[0] || idy >= in.dims[1] ||
                          idz >= in.dims[2] || idw >= in.dims[3]);
@@ -46,13 +46,13 @@ namespace cuda
             int xmax = (TX > (in.dims[0] - xB)) ? (in.dims[0] - xB) : TX;
             int ymax = (TY > (in.dims[1] - yB)) ? (in.dims[1] - yB) : TY;
 
-            dim_type iIdx = idw * in.strides[3] + idz * in.strides[2]
+            int iIdx = idw * in.strides[3] + idz * in.strides[2]
                           + idy * in.strides[1] + idx;
 
-            dim_type g0dx = idw * grad0.strides[3] + idz * grad0.strides[2]
+            int g0dx = idw * grad0.strides[3] + idz * grad0.strides[2]
                           + idy * grad0.strides[1] + idx;
 
-            dim_type g1dx = idw * grad1.strides[3] + idz * grad1.strides[2]
+            int g1dx = idw * grad1.strides[3] + idz * grad1.strides[2]
                           + idy * grad1.strides[1] + idx;
 
             __shared__ T scratch[TY + 2][TX + 2];
@@ -72,14 +72,14 @@ namespace cuda
                 // Y-1
                 sidx(-1, threadIdx.x) = (cond || idy == 0) ?
                                         sidx(0, threadIdx.x) : in.ptr[iIdx - in.strides[1]];
-                sidx(ymax, threadIdx.x) = (cond || idy + ymax >= in.dims[1] - 1) ?
+                sidx(ymax, threadIdx.x) = (cond || (idy + ymax) >= in.dims[1]) ?
                                         sidx(ymax - 1, threadIdx.x) : in.ptr[iIdx + ymax * in.strides[1]];
             }
             // Rows
             if(threadIdx.x == 0) {
                 sidx(threadIdx.y, -1) = (cond || idx == 0) ?
                                         sidx(threadIdx.y, 0) : in.ptr[iIdx - 1];
-                sidx(threadIdx.y, xmax) = (cond || idx + xmax >= in.dims[0] - 1) ?
+                sidx(threadIdx.y, xmax) = (cond || (idx + xmax) >= in.dims[0]) ?
                                         sidx(threadIdx.y, xmax - 1) : in.ptr[iIdx + xmax];
             }
 
@@ -101,13 +101,18 @@ namespace cuda
         {
             dim3 threads(TX, TY, 1);
 
-            dim_type blocksPerMatX = divup(in.dims[0], TX);
-            dim_type blocksPerMatY = divup(in.dims[1], TY);
+            int blocksPerMatX = divup(in.dims[0], TX);
+            int blocksPerMatY = divup(in.dims[1], TY);
             dim3 blocks(blocksPerMatX * in.dims[2],
                         blocksPerMatY * in.dims[3],
                         1);
 
-            gradient_kernel<T><<<blocks, threads>>>(grad0, grad1, in, blocksPerMatX, blocksPerMatY);
+            const int maxBlocksY = cuda::getDeviceProp(cuda::getActiveDeviceId()).maxGridSize[1];
+            blocks.z = divup(blocks.y, maxBlocksY);
+            blocks.y = divup(blocks.y, blocks.z);
+
+            CUDA_LAUNCH((gradient_kernel<T>), blocks, threads,
+                    grad0, grad1, in, blocksPerMatX, blocksPerMatY);
             POST_LAUNCH_CHECK();
         }
     }

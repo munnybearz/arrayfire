@@ -10,35 +10,22 @@
 #include <Array.hpp>
 #include <optypes.hpp>
 #include <math.hpp>
-#include <err_cuda.hpp>
 #include <JIT/UnaryNode.hpp>
 
 namespace cuda
 {
 
-template<typename T, af_op_t op>
-struct UnOp
-{
-    const char *name()
-    {
-        return "noop";
-    }
-};
+template<af_op_t op>
+static const char *unaryName() { return "__noop"; }
 
-#define UNARY_FN(fn)                                \
-    template<typename T>                            \
-    struct UnOp<T, af_##fn##_t>                     \
-    {                                               \
-        std::string res;                            \
-        UnOp() :                                    \
-            res(cuMangledName<T, false>("___"#fn))  \
-        {                                           \
-        }                                           \
-        const std::string name()                    \
-        {                                           \
-            return res;                             \
-        }                                           \
-    };                                              \
+#define UNARY_DECL(OP, FNAME)                   \
+    template<> STATIC_                          \
+    const char *unaryName<af_##OP##_t>()        \
+    {                                           \
+        return FNAME;                           \
+    }                                           \
+
+#define UNARY_FN(OP) UNARY_DECL(OP, #OP)
 
 UNARY_FN(sin)
 UNARY_FN(cos)
@@ -57,6 +44,7 @@ UNARY_FN(acosh)
 UNARY_FN(atanh)
 
 UNARY_FN(exp)
+UNARY_DECL(sigmoid, "__sigmoid")
 UNARY_FN(expm1)
 UNARY_FN(erf)
 UNARY_FN(erfc)
@@ -67,63 +55,45 @@ UNARY_FN(lgamma)
 UNARY_FN(log)
 UNARY_FN(log1p)
 UNARY_FN(log10)
+UNARY_FN(log2)
 
 UNARY_FN(sqrt)
 UNARY_FN(cbrt)
 
+UNARY_FN(trunc)
 UNARY_FN(round)
+UNARY_FN(sign)
 UNARY_FN(ceil)
 UNARY_FN(floor)
 
-#undef UNARY_FN
+UNARY_FN(isinf)
+UNARY_FN(isnan)
+UNARY_FN(iszero)
 
-    template<typename T, af_op_t op>
-    Array<T> unaryOp(const Array<T> &in)
-    {
+template<typename T, af_op_t op>
+Array<T> unaryOp(const Array<T> &in)
+{
+    JIT::Node_ptr in_node = in.getNode();
 
-        UnOp<T, op> uop;
+    JIT::UnaryNode *node = new JIT::UnaryNode(getFullName<T>(),
+                                              shortname<T>(true),
+                                              unaryName<op>(),
+                                              in_node, op);
 
-        JIT::Node_ptr in_node = in.getNode();
+    return createNodeArray<T>(in.dims(), JIT::Node_ptr(node));
+}
 
-        JIT::UnaryNode *node = new JIT::UnaryNode(irname<T>(),
-                                                  afShortName<T>(),
-                                                  uop.name(),
-                                                  in_node, op);
+template<typename T, af_op_t op>
+Array<char> checkOp(const Array<T> &in)
+{
+    JIT::Node_ptr in_node = in.getNode();
 
-        return createNodeArray<T>(in.dims(), JIT::Node_ptr(reinterpret_cast<JIT::Node *>(node)));
-    }
+    JIT::UnaryNode *node = new JIT::UnaryNode(getFullName<char>(),
+                                              shortname<char>(true),
+                                              unaryName<op>(),
+                                              in_node, op);
 
+    return createNodeArray<char>(in.dims(), JIT::Node_ptr(node));
+}
 
-#define UNARY2_FN(op, fn)                           \
-    template<typename T>                            \
-    struct UnOp<T, af_##op##_t>                     \
-    {                                               \
-        std::string res;                            \
-        UnOp() :                                    \
-            res(cuMangledName<T, false>("___"#fn))  \
-        {                                           \
-        }                                           \
-        const std::string name()                    \
-        {                                           \
-            return res;                             \
-        }                                           \
-    };                                              \
-
-
-UNARY2_FN(isnan, isNaN)
-UNARY2_FN(isinf, isINF)
-UNARY2_FN(iszero, iszero)
-
-    template<typename T, af_op_t op>
-    Array<char> checkOp(const Array<T> &in)
-    {
-        UnOp<T, op> uop;
-
-        JIT::Node_ptr in_node = in.getNode();
-        JIT::UnaryNode *node = new JIT::UnaryNode(irname<char>(),
-                                                  afShortName<char>(),
-                                                  uop.name(),
-                                                  in_node, op);
-        return createNodeArray<char>(in.dims(), JIT::Node_ptr(reinterpret_cast<JIT::Node *>(node)));
-    }
 }

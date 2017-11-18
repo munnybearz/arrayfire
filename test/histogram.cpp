@@ -18,6 +18,7 @@
 
 using std::string;
 using std::vector;
+using std::abs;
 
 template<typename T>
 class Histogram : public ::testing::Test
@@ -27,30 +28,10 @@ class Histogram : public ::testing::Test
 };
 
 // create a list of types to be tested
-typedef ::testing::Types<float, double, int, uint, char, uchar> TestTypes;
+typedef ::testing::Types<float, double, int, uint, char, uchar, short, ushort, intl, uintl> TestTypes;
 
 // register the type list
 TYPED_TEST_CASE(Histogram, TestTypes);
-
-TYPED_TEST(Histogram,InvalidArgs)
-{
-    if (noDoubleTests<TypeParam>()) return;
-
-    af::dim4            dims(1);
-    vector<TypeParam>   in(100,1);
-
-    af_array inArray   = 0;
-    af_array outArray  = 0;
-
-    // square test file is 100x100 originally
-    // use new dimensions for this argument
-    // unit test
-    af::dim4 newDims(5,5,2,2);
-    ASSERT_EQ(AF_SUCCESS, af_create_array(&inArray, &in.front(), newDims.ndims(), newDims.get(), (af_dtype) af::dtype_traits<TypeParam>::af_type));
-
-    ASSERT_EQ(AF_ERR_SIZE, af_histogram(&outArray,inArray,256,0,255));
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(inArray));
-}
 
 template<typename inType, typename outType>
 void histTest(string pTestFile, unsigned nbins, double minval, double maxval)
@@ -67,14 +48,14 @@ void histTest(string pTestFile, unsigned nbins, double minval, double maxval)
 
     af_array outArray   = 0;
     af_array inArray    = 0;
-    outType *outData;
+
     ASSERT_EQ(AF_SUCCESS, af_create_array(&inArray, &(in[0].front()), dims.ndims(), dims.get(), (af_dtype) af::dtype_traits<inType>::af_type));
 
     ASSERT_EQ(AF_SUCCESS,af_histogram(&outArray,inArray,nbins,minval,maxval));
 
-    outData = new outType[dims.elements()];
+    std::vector<outType> outData(dims.elements());
 
-    ASSERT_EQ(AF_SUCCESS, af_get_data_ptr((void*)outData, outArray));
+    ASSERT_EQ(AF_SUCCESS, af_get_data_ptr((void*)outData.data(), outArray));
 
     for (size_t testIter=0; testIter<tests.size(); ++testIter) {
         vector<outType> currGoldBar = tests[testIter];
@@ -85,9 +66,8 @@ void histTest(string pTestFile, unsigned nbins, double minval, double maxval)
     }
 
     // cleanup
-    delete[] outData;
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(inArray));
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(outArray));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(inArray));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(outArray));
 }
 
 TYPED_TEST(Histogram,256Bins0min255max_ones)
@@ -137,8 +117,8 @@ TEST(Histogram, CPP)
     af::array output = histogram(input, nbins, minval, maxval);
 //! [hist_nominmax]
 
-    uint *outData = new uint[output.elements()];
-    output.host((void*)outData);
+    std::vector<uint> outData(output.elements());
+    output.host((void*)outData.data());
 
     for (size_t testIter=0; testIter<tests.size(); ++testIter) {
         vector<uint> currGoldBar = tests[testIter];
@@ -147,9 +127,6 @@ TEST(Histogram, CPP)
             ASSERT_EQ(currGoldBar[elIter],outData[elIter])<< "at: " << elIter<< std::endl;
         }
     }
-
-    // cleanup
-    delete[] outData;
 }
 
 /////////////////////////////////// Documentation Snippets //////////////////////////////////
@@ -241,7 +218,7 @@ TEST(Histogram, SNIPPET_histequal)
 
     // input after histogram equalization or normalization
     // based on histogram provided
-    array eq_out = histequal(hist_in, hist_out);
+    array eq_out = histEqual(hist_in, hist_out);
     // eq_out = { 1.5, 4.5,  1.5, 1.5, 4.5, 4.5, 6.0, 7.5, 4.5 }
     //! [ex_image_histequal]
 
@@ -250,9 +227,75 @@ TEST(Histogram, SNIPPET_histequal)
 
     if( false == equal(h_out.begin(), h_out.end(), output) ) {
         cout << "Expected: ";
-        copy(output, output + nbins, ostream_iterator<float>(cout, ", "));
+        copy(output, output + nElems, ostream_iterator<float>(cout, ", "));
         cout << endl << "Actual: ";
         copy(h_out.begin(), h_out.end(), ostream_iterator<float>(cout, ", "));
         FAIL() << "Output did not match";
+    }
+}
+
+TEST(histogram, GFOR)
+{
+    using namespace af;
+
+    dim4 dims = dim4(100, 100, 3);
+    array A = round(100 * randu(dims));
+    array B = constant(0, 100, 1, 3);
+
+    gfor(seq ii, 3) {
+        B(span, span, ii) = histogram(A(span, span, ii), 100);
+    }
+
+    for(int ii = 0; ii < 3; ii++) {
+        array c_ii = histogram(A(span, span, ii), 100);
+        array b_ii = B(span, span, ii);
+        ASSERT_EQ(max<double>(abs(c_ii - b_ii)) < 1E-5, true);
+    }
+}
+
+TEST(histogram, IndexedArray)
+{
+    using namespace af;
+
+    const dim_t LEN = 32;
+    array A = range(LEN, (dim_t)2);
+    for (int i=16; i<28; ++i) {
+        A(seq(i, i+3), span) = i/4 - 1;
+    }
+    array B = A(seq(20), span);
+    array C = histogram(B, 4);
+    unsigned out[4];
+    C.host((void*)out);
+    ASSERT_EQ(true, out[0] == 16);
+    ASSERT_EQ(true, out[1] ==  8);
+    ASSERT_EQ(true, out[2] ==  8);
+    ASSERT_EQ(true, out[3] ==  8);
+}
+
+TEST(histogram, LargeBins)
+{
+    const int max_val = 20000;
+    const int min_val = 0;
+    const int nbins = max_val / 2;
+    const int num = 1 << 20;
+    af::array A = af::round(max_val * af::randu(num) + min_val).as(u32);
+    af::eval(A);
+    af::array H = histogram(A, nbins, min_val, max_val);
+
+    std::vector<unsigned> hA(num);
+    A.host(hA.data());
+
+    std::vector<unsigned> hH(nbins);
+    H.host(hH.data());
+
+    int dx = (max_val - min_val) / nbins;
+    for (int i = 0; i < num; i++) {
+        int bin = (hA[i] - min_val) / dx;
+        bin = std::min(bin, nbins - 1);
+        hH[bin] -= 1;
+    }
+
+    for (int i = 0; i < nbins; i++) {
+        ASSERT_EQ(hH[i], 0u);
     }
 }

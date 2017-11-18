@@ -26,7 +26,7 @@ class MatchTemplate : public ::testing::Test
 };
 
 // create a list of types to be tested
-typedef ::testing::Types<float, double, int, uint, char, uchar> TestTypes;
+typedef ::testing::Types<float, double, int, uint, char, uchar, short, ushort> TestTypes;
 
 // register the type list
 TYPED_TEST_CASE(MatchTemplate, TestTypes);
@@ -57,9 +57,9 @@ void matchTemplateTest(string pTestFile, af_match_type pMatchType)
 
     ASSERT_EQ(AF_SUCCESS, af_match_template(&outArray, sArray, tArray, pMatchType));
 
-    outType *outData = new outType[sDims.elements()];
+    std::vector<outType> outData(sDims.elements());
 
-    ASSERT_EQ(AF_SUCCESS, af_get_data_ptr((void*)outData, outArray));
+    ASSERT_EQ(AF_SUCCESS, af_get_data_ptr((void*)outData.data(), outArray));
 
     vector<outType> currGoldBar = tests[0];
     size_t nElems        = currGoldBar.size();
@@ -68,10 +68,9 @@ void matchTemplateTest(string pTestFile, af_match_type pMatchType)
     }
 
     // cleanup
-    delete[] outData;
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(sArray));
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(tArray));
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(outArray));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(sArray));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(tArray));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(outArray));
 }
 
 TYPED_TEST(MatchTemplate, Matrix_SAD)
@@ -108,8 +107,8 @@ TEST(MatchTemplate, InvalidMatchType)
 
     ASSERT_EQ(AF_ERR_ARG, af_match_template(&outArray, inArray, tArray, (af_match_type)-1));
 
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(inArray));
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(tArray));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(inArray));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(tArray));
 }
 
 ///////////////////////////////// CPP TESTS /////////////////////////////

@@ -7,12 +7,12 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <af/defines.h>
-#include <dispatch.hpp>
+#include <common/dispatch.hpp>
 #include <err_cuda.hpp>
 #include <debug_cuda.hpp>
 #include <kernel/fast_lut.hpp>
 #include <memory.hpp>
+#include "shared.hpp"
 
 namespace cuda
 {
@@ -47,19 +47,19 @@ int idx(const int x, const int y)
 }
 
 // test_greater()
-// Tests if a pixel x >= p + thr
+// Tests if a pixel x > p + thr
 inline __device__
 int test_greater(const float x, const float p, const float thr)
 {
-    return (x >= p + thr);
+    return (x > p + thr);
 }
 
 // test_smaller()
-// Tests if a pixel x <= p - thr
+// Tests if a pixel x < p - thr
 inline __device__
 int test_smaller(const float x, const float p, const float thr)
 {
-    return (x <= p - thr);
+    return (x < p - thr);
 }
 
 // test_pixel()
@@ -70,7 +70,7 @@ template<typename T>
 inline __device__
 int test_pixel(const T* local_image, const float p, const float thr, const int x, const int y)
 {
-    return -test_smaller((float)local_image[idx(x,y)], p, thr) | test_greater((float)local_image[idx(x,y)], p, thr);
+    return -test_smaller((float)local_image[idx(x,y)], p, thr) + test_greater((float)local_image[idx(x,y)], p, thr);
 }
 
 // max_val()
@@ -82,6 +82,16 @@ int max_val(const int x, const int y)
 }
 inline __device__
 unsigned max_val(const unsigned x, const unsigned y)
+{
+    return max(x, y);
+}
+inline __device__
+short max_val(const short x, const short y)
+{
+    return max(x, y);
+}
+inline __device__
+ushort max_val(const ushort x, const ushort y)
 {
     return max(x, y);
 }
@@ -108,6 +118,16 @@ inline __device__ unsigned abs_diff(const unsigned x, const unsigned y)
     int i = (int)x - (int)y;
     return max(-i, i);
 }
+inline __device__ short abs_diff(const short x, const short y)
+{
+    short i = x - y;
+    return max(-i, i);
+}
+inline __device__ ushort abs_diff(const ushort x, const ushort y)
+{
+    int i = (int)x - (int)y;
+    return (ushort)max(-i, i);
+}
 inline __device__ float abs_diff(const float x, const float y)
 {
     return fabs(x - y);
@@ -116,64 +136,6 @@ inline __device__ double abs_diff(const double x, const double y)
 {
     return fabs(x - y);
 }
-
-// non-specialized class template
-//http://www.naic.edu/~phil/hardware/nvidia/doc/src/simpleTemplates/doc/readme.txt
-template <class T>
-class ExtSharedMem
-{
-    public:
-        // Ensure that we won't compile any un-specialized types
-        __device__ T* getPointer() { extern __shared__ float s_float[]; return s_float; };
-};
-
-// specialization for char
-template <>
-class ExtSharedMem <char>
-{
-    public:
-        __device__ char* getPointer() { extern __shared__ char s_char[]; return s_char; }
-};
-
-// specialization for int
-template <>
-class ExtSharedMem <uchar>
-{
-    public:
-        __device__ uchar* getPointer() { extern __shared__ uchar s_uchar[]; return s_uchar; }
-};
-
-// specialization for int
-template <>
-class ExtSharedMem <int>
-{
-    public:
-        __device__ int* getPointer() { extern __shared__ int s_int[]; return s_int; }
-};
-
-// specialization for unsigned
-template <>
-class ExtSharedMem <unsigned>
-{
-    public:
-        __device__ unsigned* getPointer() { extern __shared__ unsigned s_unsigned[]; return s_unsigned; }
-};
-
-// specialization for float
-template <>
-class ExtSharedMem <float>
-{
-    public:
-        __device__ float* getPointer() { extern __shared__ float s_float[]; return s_float; }
-};
-
-// specialization for double
-template <>
-class ExtSharedMem <double>
-{
-    public:
-        __device__ double* getPointer() { extern __shared__ double s_double[]; return s_double; }
-};
 
 template<typename T, int arc_length>
 __device__
@@ -276,7 +238,7 @@ void locate_features(
     unsigned lx = bx / 2 + 3;
     unsigned ly = by / 2 + 3;
 
-    ExtSharedMem<T> shared;
+    SharedMemory<T> shared;
     T* local_image_curr = shared.getPointer();
     load_shared_image(in, local_image_curr, ix, iy, bx, by, x, y, lx, ly, edge);
     __syncthreads();
@@ -423,27 +385,28 @@ void fast(unsigned* out_feat,
           float** x_out,
           float** y_out,
           float** score_out,
-          CParam<T> in,
+          const Array<T>& in,
           const float thr,
           const unsigned arc_length,
           const unsigned nonmax,
           const float feature_ratio,
           const unsigned edge)
 {
-    const unsigned max_feat = ceil(in.dims[0] * in.dims[1] * feature_ratio);
+    dim4 indims = in.dims();
+    const unsigned max_feat = ceil(indims[0] * indims[1] * feature_ratio);
 
     dim3 threads(16, 16);
-    dim3 blocks(divup(in.dims[0]-edge*2, threads.x), divup(in.dims[1]-edge*2, threads.y));
+    dim3 blocks(divup(indims[0]-edge*2, threads.x), divup(indims[1]-edge*2, threads.y));
 
     // Matrix containing scores for detected features, scores are stored in the
     // same coordinates as features, dimensions should be equal to in.
-    float *d_score = NULL;
-    size_t score_bytes = in.dims[0] * in.dims[1] * sizeof(float) + sizeof(unsigned);
-    d_score = (float *)memAlloc<char>(score_bytes);
+    auto d_score = memAlloc<float>(indims[0] * indims[1] + 1);
 
-    float *d_flags = d_score;
+    float *d_flags = d_score.get();
+    uptr<float> d_flags_alloc;
     if (nonmax) {
-        d_flags = memAlloc<float>(in.dims[0] * in.dims[1]);
+        d_flags_alloc = memAlloc<float>(indims[0] * indims[1]);
+        d_flags = d_flags_alloc.get();
     }
 
     // Shared memory size
@@ -451,28 +414,28 @@ void fast(unsigned* out_feat,
 
     switch(arc_length) {
     case 9:
-        locate_features<T, 9><<<blocks, threads, shared_size>>>(in, d_score, thr, edge);
+        CUDA_LAUNCH_SMEM((locate_features<T, 9>), blocks, threads, shared_size, in, d_score.get(), thr, edge);
         break;
     case 10:
-        locate_features<T,10><<<blocks, threads, shared_size>>>(in, d_score, thr, edge);
+        CUDA_LAUNCH_SMEM((locate_features<T,10>), blocks, threads, shared_size, in, d_score.get(), thr, edge);
         break;
     case 11:
-        locate_features<T,11><<<blocks, threads, shared_size>>>(in, d_score, thr, edge);
+        CUDA_LAUNCH_SMEM((locate_features<T,11>), blocks, threads, shared_size, in, d_score.get(), thr, edge);
         break;
     case 12:
-        locate_features<T,12><<<blocks, threads, shared_size>>>(in, d_score, thr, edge);
+        CUDA_LAUNCH_SMEM((locate_features<T,12>), blocks, threads, shared_size, in, d_score.get(), thr, edge);
         break;
     case 13:
-        locate_features<T,13><<<blocks, threads, shared_size>>>(in, d_score, thr, edge);
+        CUDA_LAUNCH_SMEM((locate_features<T,13>), blocks, threads, shared_size, in, d_score.get(), thr, edge);
         break;
     case 14:
-        locate_features<T,14><<<blocks, threads, shared_size>>>(in, d_score, thr, edge);
+        CUDA_LAUNCH_SMEM((locate_features<T,14>), blocks, threads, shared_size, in, d_score.get(), thr, edge);
         break;
     case 15:
-        locate_features<T,15><<<blocks, threads, shared_size>>>(in, d_score, thr, edge);
+        CUDA_LAUNCH_SMEM((locate_features<T,15>), blocks, threads, shared_size, in, d_score.get(), thr, edge);
         break;
     case 16:
-        locate_features<T,16><<<blocks, threads, shared_size>>>(in, d_score, thr, edge);
+        CUDA_LAUNCH_SMEM((locate_features<T,16>), blocks, threads, shared_size, in, d_score.get(), thr, edge);
         break;
     }
 
@@ -481,49 +444,54 @@ void fast(unsigned* out_feat,
     threads.x = 32;
     threads.y =  8;
 
-    blocks.x = divup(in.dims[0], 64);
-    blocks.y = divup(in.dims[1], 64);
+    blocks.x = divup(indims[0], 64);
+    blocks.y = divup(indims[1], 64);
 
-    unsigned *d_total = (unsigned *)(d_score + in.dims[0] * in.dims[1]);
-    CUDA_CHECK(cudaMemset(d_total, 0, sizeof(unsigned)));
-    unsigned *d_counts  = memAlloc<unsigned>(blocks.x * blocks.y);
-    unsigned *d_offsets = memAlloc<unsigned>(blocks.x * blocks.y);
+    unsigned *d_total = (unsigned *)(d_score.get() + (indims[0] * indims[1]));
+    CUDA_CHECK(cudaMemsetAsync(d_total, 0, sizeof(unsigned), cuda::getActiveStream()));
+    auto d_counts  = memAlloc<unsigned>(blocks.x * blocks.y);
+    auto d_offsets = memAlloc<unsigned>(blocks.x * blocks.y);
 
     if (nonmax)
-        non_max_counts<true ><<<blocks, threads>>>(d_counts, d_offsets, d_total, d_flags,
-                                                   d_score, in.dims[0], in.dims[1], edge);
+        CUDA_LAUNCH((non_max_counts<true >), blocks, threads,
+                    d_counts.get(), d_offsets.get(), d_total, d_flags,
+                    d_score.get(), indims[0], indims[1], edge);
     else
-        non_max_counts<false><<<blocks, threads>>>(d_counts, d_offsets, d_total, d_flags,
-                                                   d_score, in.dims[0], in.dims[1], edge);
+        CUDA_LAUNCH((non_max_counts<false>), blocks, threads,
+                    d_counts.get(), d_offsets.get(), d_total, d_flags,
+                    d_score.get(), indims[0], indims[1], edge);
 
     POST_LAUNCH_CHECK();
 
     // Dimensions of output array
     unsigned total;
-    CUDA_CHECK(cudaMemcpy(&total, d_total, sizeof(unsigned), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpyAsync(&total, d_total, sizeof(unsigned), cudaMemcpyDeviceToHost,
+                cuda::getActiveStream()));
+    CUDA_CHECK(cudaStreamSynchronize(cuda::getActiveStream()));
     total = total < max_feat ? total : max_feat;
 
     if (total > 0) {
-        *x_out     = memAlloc<float>(total);
-        *y_out     = memAlloc<float>(total);
-        *score_out = memAlloc<float>(total);
+        auto x_out_alloc = memAlloc<float>(total);
+        auto y_out_alloc = memAlloc<float>(total);
+        auto score_out_alloc = memAlloc<float>(total);
+        *x_out     = x_out_alloc.get();
+        *y_out     = y_out_alloc.get();
+        *score_out = score_out_alloc.get();
 
-        get_features<float><<<blocks, threads>>>(*x_out, *y_out, *score_out, d_flags, d_counts,
-                                                 d_offsets, total, in.dims[0], in.dims[1], edge);
+        CUDA_LAUNCH((get_features<float>), blocks, threads,
+                *x_out, *y_out, *score_out, d_flags, d_counts.get(),
+                d_offsets.get(), total, indims[0], indims[1], edge);
 
         POST_LAUNCH_CHECK();
+
+        x_out_alloc.release();
+        y_out_alloc.release();
+        score_out_alloc.release();
     }
 
     *out_feat = total;
-
-    memFree<uchar>((uchar *)d_score);
-    memFree(d_counts);
-    memFree(d_offsets);
-    if (nonmax) {
-        memFree(d_flags);
-    }
 }
 
-} // namespace kernel
+}  // namespace kernel
 
-} // namespace cuda
+}  // namespace cuda

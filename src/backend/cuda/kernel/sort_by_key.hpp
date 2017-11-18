@@ -7,53 +7,114 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
+#include <af/dim4.hpp>
+#include <memory.hpp>
 #include <math.hpp>
-#include <dispatch.hpp>
+#include <common/dispatch.hpp>
 #include <Param.hpp>
 #include <err_cuda.hpp>
 #include <debug_cuda.hpp>
-#include <thrust/device_ptr.h>
-#include <thrust/sort.h>
+#include <kernel/iota.hpp>
+#include <kernel/thrust_sort_by_key.hpp>
 
 namespace cuda
 {
     namespace kernel
     {
-        // Kernel Launch Config Values
-        static const unsigned TX = 32;
-        static const unsigned TY = 8;
 
         ///////////////////////////////////////////////////////////////////////////
         // Wrapper functions
         ///////////////////////////////////////////////////////////////////////////
-        template<typename Tk, typename Tv, bool isAscending>
-        void sort0_by_key(Param<Tk> okey, Param<Tv> oval)
+        template<typename Tk, typename Tv>
+        void sort0ByKeyIterative(Param<Tk> okey, Param<Tv> oval, bool isAscending)
         {
-            thrust::device_ptr<Tk>       okey_ptr = thrust::device_pointer_cast(okey.ptr);
-            thrust::device_ptr<Tv>       oval_ptr = thrust::device_pointer_cast(oval.ptr);
+            for(int w = 0; w < okey.dims[3]; w++) {
+                int okeyW = w * okey.strides[3];
+                int ovalW = w * oval.strides[3];
+                for(int z = 0; z < okey.dims[2]; z++) {
+                    int okeyWZ = okeyW + z * okey.strides[2];
+                    int ovalWZ = ovalW + z * oval.strides[2];
+                    for(int y = 0; y < okey.dims[1]; y++) {
 
-            for(dim_type w = 0; w < okey.dims[3]; w++) {
-                dim_type okeyW = w * okey.strides[3];
-                dim_type ovalW = w * oval.strides[3];
-                for(dim_type z = 0; z < okey.dims[2]; z++) {
-                    dim_type okeyWZ = okeyW + z * okey.strides[2];
-                    dim_type ovalWZ = ovalW + z * oval.strides[2];
-                    for(dim_type y = 0; y < okey.dims[1]; y++) {
+                        int okeyOffset = okeyWZ + y * okey.strides[1];
+                        int ovalOffset = ovalWZ + y * oval.strides[1];
 
-                        dim_type okeyOffset = okeyWZ + y * okey.strides[1];
-                        dim_type ovalOffset = ovalWZ + y * oval.strides[1];
-
-                        if(isAscending) {
-                            thrust::sort_by_key(okey_ptr + okeyOffset, okey_ptr + okeyOffset + okey.dims[0],
-                                                oval_ptr + ovalOffset);
-                        } else {
-                            thrust::sort_by_key(okey_ptr + okeyOffset, okey_ptr + okeyOffset + okey.dims[0],
-                                                oval_ptr + ovalOffset, thrust::greater<Tk>());
-                        }
+                        thrustSortByKey<Tk, Tv>(okey.ptr + okeyOffset,
+                                                oval.ptr + ovalOffset,
+                                                okey.dims[0],
+                                                isAscending);
                     }
                 }
             }
             POST_LAUNCH_CHECK();
+        }
+
+        template<typename Tk, typename Tv>
+        void sortByKeyBatched(Param<Tk> pKey, Param<Tv> pVal, const int dim, bool isAscending)
+        {
+            af::dim4 inDims;
+            for(int i = 0; i < 4; i++)
+                inDims[i] = pKey.dims[i];
+
+            const dim_t elements = inDims.elements();
+
+            // Sort dimension
+            // tileDims * seqDims = inDims
+            af::dim4 tileDims(1);
+            af::dim4 seqDims = inDims;
+            tileDims[dim] = inDims[dim];
+            seqDims[dim] = 1;
+
+            // Create/call iota
+            // Array<uint> key = iota<uint>(seqDims, tileDims);
+            auto Seq = memAlloc<uint>(elements);
+            Param<uint> pSeq;
+            pSeq.ptr = Seq.get();
+            pSeq.strides[0] = 1;
+            pSeq.dims[0] = inDims[0];
+            for(int i = 1; i < 4; i++) {
+                pSeq.dims[i] = inDims[i];
+                pSeq.strides[i] = pSeq.strides[i - 1] * pSeq.dims[i - 1];
+            }
+            cuda::kernel::iota<uint>(pSeq, seqDims, tileDims);
+
+            Tk *Key = pKey.ptr;
+            auto cKey = memAlloc<Tk>(elements);
+            CUDA_CHECK(cudaMemcpyAsync(cKey.get(), Key, elements * sizeof(Tk),
+                                       cudaMemcpyDeviceToDevice,
+                                       getActiveStream()));
+
+            Tv *Val = pVal.ptr;
+            thrustSortByKey(Key, Val, elements, isAscending);
+            thrustSortByKey(cKey.get(), Seq.get(), elements, isAscending);
+
+            auto cSeq = memAlloc<uint>(elements);
+            CUDA_CHECK(cudaMemcpyAsync(cSeq.get(), Seq.get(), elements * sizeof(uint),
+                                       cudaMemcpyDeviceToDevice,
+                                       getActiveStream()));
+
+            // This always needs to be ascending
+            thrustSortByKey(Seq.get(), Val, elements, true);
+            thrustSortByKey(cSeq.get(), Key, elements, true);
+
+            // No need of doing moddims here because the original Array<T>
+            // dimensions have not been changed
+            //val.modDims(inDims);
+
+        }
+
+        template<typename Tk, typename Tv>
+        void sort0ByKey(Param<Tk> okey, Param<Tv> oval, bool isAscending)
+        {
+            int higherDims =  okey.dims[1] * okey.dims[2] * okey.dims[3];
+            // Batced sort performs 4x sort by keys
+            // But this is only useful before GPU is saturated
+            // The GPU is saturated at around 100,000 integers
+            // Call batched sort only if both conditions are met
+            if(higherDims > 4 && okey.dims[0] < 100000)
+                kernel::sortByKeyBatched<Tk, Tv>(okey, oval, 0, isAscending);
+            else
+                kernel::sort0ByKeyIterative<Tk, Tv>(okey, oval, isAscending);
         }
     }
 }

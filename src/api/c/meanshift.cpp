@@ -13,44 +13,46 @@
 #include <handle.hpp>
 #include <backend.hpp>
 #include <meanshift.hpp>
-#include <err_common.hpp>
+#include <common/err_common.hpp>
 
 using af::dim4;
 using namespace detail;
 
-template<typename T, bool is_color>
-static inline af_array meanshift(const af_array &in, const float &s_sigma, const float &c_sigma, const unsigned iter)
+template<typename T>
+static inline af_array mean_shift(const af_array &in, const float &s_sigma, const float &c_sigma,
+                                  const unsigned niters, const bool is_color)
 {
-    return getHandle(meanshift<T, is_color>(getArray<T>(in), s_sigma, c_sigma, iter));
+    return getHandle(meanshift<T>(getArray<T>(in), s_sigma, c_sigma, niters, is_color));
 }
 
-template<bool is_color>
-af_err meanshift(af_array *out, const af_array in, const float s_sigma, const float c_sigma, const unsigned iter)
+af_err af_mean_shift(af_array *out, const af_array in,
+                     const float spatial_sigma, const float chromatic_sigma,
+                     const unsigned num_iterations, const bool is_color)
 {
     try {
-        ARG_ASSERT(2, (s_sigma>=0));
-        ARG_ASSERT(3, (c_sigma>=0));
-        ARG_ASSERT(4, (iter>0));
+        ARG_ASSERT(2, (spatial_sigma>=0));
+        ARG_ASSERT(3, (chromatic_sigma>=0));
+        ARG_ASSERT(4, (num_iterations>0));
 
-        ArrayInfo info = getInfo(in);
+        const ArrayInfo& info = getInfo(in);
         af_dtype type  = info.getType();
         af::dim4 dims  = info.dims();
 
-        if (is_color) {
-            DIM_ASSERT(1, (dims.ndims()>=3 && dims.ndims()<=4));
-            DIM_ASSERT(1, (dims[2]==3));
-        }
-        else
-            DIM_ASSERT(1, (dims.ndims()>=2 && dims.ndims()<=3));
+        DIM_ASSERT(1, (dims.ndims()>=2));
+        if (is_color) DIM_ASSERT(1, (dims[2]==3));
 
         af_array output;
         switch(type) {
-            case f32: output = meanshift<float , is_color>(in, s_sigma, c_sigma, iter); break;
-            case f64: output = meanshift<double, is_color>(in, s_sigma, c_sigma, iter); break;
-            case b8 : output = meanshift<char  , is_color>(in, s_sigma, c_sigma, iter); break;
-            case s32: output = meanshift<int   , is_color>(in, s_sigma, c_sigma, iter); break;
-            case u32: output = meanshift<uint  , is_color>(in, s_sigma, c_sigma, iter); break;
-            case u8 : output = meanshift<uchar , is_color>(in, s_sigma, c_sigma, iter); break;
+            case f32: output = mean_shift<float >(in, spatial_sigma, chromatic_sigma, num_iterations, is_color); break;
+            case f64: output = mean_shift<double>(in, spatial_sigma, chromatic_sigma, num_iterations, is_color); break;
+            case b8 : output = mean_shift<char  >(in, spatial_sigma, chromatic_sigma, num_iterations, is_color); break;
+            case s32: output = mean_shift<int   >(in, spatial_sigma, chromatic_sigma, num_iterations, is_color); break;
+            case u32: output = mean_shift<uint  >(in, spatial_sigma, chromatic_sigma, num_iterations, is_color); break;
+            case s16: output = mean_shift<short >(in, spatial_sigma, chromatic_sigma, num_iterations, is_color); break;
+            case u16: output = mean_shift<ushort>(in, spatial_sigma, chromatic_sigma, num_iterations, is_color); break;
+            case s64: output = mean_shift<intl  >(in, spatial_sigma, chromatic_sigma, num_iterations, is_color); break;
+            case u64: output = mean_shift<uintl >(in, spatial_sigma, chromatic_sigma, num_iterations, is_color); break;
+            case u8 : output = mean_shift<uchar >(in, spatial_sigma, chromatic_sigma, num_iterations, is_color); break;
             default : TYPE_ERROR(1, type);
         }
         std::swap(*out,output);
@@ -58,12 +60,4 @@ af_err meanshift(af_array *out, const af_array in, const float s_sigma, const fl
     CATCHALL;
 
     return AF_SUCCESS;
-}
-
-af_err af_meanshift(af_array *out, const af_array in, const float spatial_sigma, const float chromatic_sigma, const unsigned iter, const bool is_color)
-{
-    if (is_color)
-        return meanshift<true >(out, in, spatial_sigma, chromatic_sigma, iter);
-    else
-        return meanshift<false>(out, in, spatial_sigma, chromatic_sigma, iter);
 }

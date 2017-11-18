@@ -7,8 +7,6 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <af/defines.h>
-#include <af/array.h>
 #include <af/dim4.hpp>
 #include <Array.hpp>
 #include <optypes.hpp>
@@ -32,7 +30,7 @@ namespace opencl
                                                   "__creal",
                                                   in_node, af_real_t);
 
-        return createNodeArray<To>(in.dims(), JIT::Node_ptr(reinterpret_cast<JIT::Node *>(node)));
+        return createNodeArray<To>(in.dims(), JIT::Node_ptr(node));
     }
 
     template<typename To, typename Ti>
@@ -44,7 +42,7 @@ namespace opencl
                                                   "__cimag",
                                                   in_node, af_imag_t);
 
-        return createNodeArray<To>(in.dims(), JIT::Node_ptr(reinterpret_cast<JIT::Node *>(node)));
+        return createNodeArray<To>(in.dims(), JIT::Node_ptr(node));
     }
 
     template<typename T> static const char *abs_name() { return "fabs"; }
@@ -60,7 +58,7 @@ namespace opencl
                                                   abs_name<Ti>(),
                                                   in_node, af_abs_t);
 
-        return createNodeArray<To>(in.dims(), JIT::Node_ptr(reinterpret_cast<JIT::Node *>(node)));
+        return createNodeArray<To>(in.dims(), JIT::Node_ptr(node));
     }
 
     template<typename T> static const char *conj_name() { return "__noop"; }
@@ -76,6 +74,6 @@ namespace opencl
                                                   conj_name<T>(),
                                                   in_node, af_conj_t);
 
-        return createNodeArray<T>(in.dims(), JIT::Node_ptr(reinterpret_cast<JIT::Node *>(node)));
+        return createNodeArray<T>(in.dims(), JIT::Node_ptr(node));
     }
 }

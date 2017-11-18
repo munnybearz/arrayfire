@@ -20,12 +20,12 @@ Array<in_t> lookup(const Array<in_t> &input, const Array<idx_t> &indices, const 
     const dim4 iDims = input.dims();
 
     dim4 oDims(1);
-    for (dim_type d=0; d<4; ++d)
+    for (dim_t d=0; d<4; ++d)
         oDims[d] = (d==dim ? indices.elements() : iDims[d]);
 
     Array<in_t> out = createEmptyArray<in_t>(oDims);
 
-    dim_type nDims = iDims.ndims();
+    dim_t nDims = iDims.ndims();
 
     switch(dim) {
         case 0: kernel::lookup<in_t, idx_t, 0>(out, input, indices, nDims); break;
@@ -42,6 +42,10 @@ Array<in_t> lookup(const Array<in_t> &input, const Array<idx_t> &indices, const 
     template Array<T> lookup<T, double  >(const Array<T> &input, const Array<double  > &indices, const unsigned dim); \
     template Array<T> lookup<T, int     >(const Array<T> &input, const Array<int     > &indices, const unsigned dim); \
     template Array<T> lookup<T, unsigned>(const Array<T> &input, const Array<unsigned> &indices, const unsigned dim); \
+    template Array<T> lookup<T, short   >(const Array<T> &input, const Array<short   > &indices, const unsigned dim); \
+    template Array<T> lookup<T, ushort  >(const Array<T> &input, const Array<ushort  > &indices, const unsigned dim); \
+    template Array<T> lookup<T, intl    >(const Array<T> &input, const Array<intl    > &indices, const unsigned dim); \
+    template Array<T> lookup<T, uintl   >(const Array<T> &input, const Array<uintl   > &indices, const unsigned dim); \
     template Array<T> lookup<T, uchar   >(const Array<T> &input, const Array<uchar   > &indices, const unsigned dim);
 
 INSTANTIATE(float   );
@@ -50,7 +54,11 @@ INSTANTIATE(double  );
 INSTANTIATE(cdouble );
 INSTANTIATE(int     );
 INSTANTIATE(unsigned);
+INSTANTIATE(intl    );
+INSTANTIATE(uintl   );
 INSTANTIATE(uchar   );
 INSTANTIATE(char    );
+INSTANTIATE(short   );
+INSTANTIATE(ushort  );
 
 }

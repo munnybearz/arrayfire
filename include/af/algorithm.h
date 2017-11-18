@@ -24,9 +24,24 @@ namespace af
 
        \ingroup reduce_func_sum
 
-       \note \p dim is -1 by default. -1 denotes the first non-signleton dimension.
+       \note \p dim is -1 by default. -1 denotes the first non-singleton dimension.
     */
     AFAPI array sum(const array &in, const int dim = -1);
+
+#if AF_API_VERSION >= 31
+    /**
+       C++ Interface for sum of elements in an array while replacing nan values
+
+       \param[in] in is the input array
+       \param[in] dim The dimension along which the add operation occurs
+       \param[in] nanval Replace nans with the value passed to this function
+       \return    result of sum all values along dimension \p dim
+
+       \ingroup reduce_func_sum
+
+    */
+    AFAPI array sum(const array &in, const int dim, const double nanval);
+#endif
 
     /**
        C++ Interface for product of elements in an array
@@ -37,9 +52,24 @@ namespace af
 
        \ingroup reduce_func_product
 
-       \note \p dim is -1 by default. -1 denotes the first non-signleton dimension.
+       \note \p dim is -1 by default. -1 denotes the first non-singleton dimension.
     */
     AFAPI array product(const array &in, const int dim = -1);
+
+#if AF_API_VERSION >= 31
+    /**
+       C++ Interface for product of elements in an array while replacing nan values
+
+       \param[in] in is the input array
+       \param[in] dim The dimension along which the add operation occurs
+       \param[in] nanval Replace nans with the value passed to this function
+       \return    result of product all values along dimension \p dim
+
+       \ingroup reduce_func_product
+
+    */
+    AFAPI array product(const array &in, const int dim, const double nanval);
+#endif
 
     /**
        C++ Interface for minimum values in an array
@@ -50,7 +80,8 @@ namespace af
 
        \ingroup reduce_func_min
 
-       \note \p dim is -1 by default. -1 denotes the first non-signleton dimension.
+       \note \p dim is -1 by default. -1 denotes the first non-singleton dimension.
+       \note NaN values are ignored
     */
     AFAPI array min(const array &in, const int dim = -1);
 
@@ -63,7 +94,8 @@ namespace af
 
        \ingroup reduce_func_max
 
-       \note \p dim is -1 by default. -1 denotes the first non-signleton dimension.
+       \note \p dim is -1 by default. -1 denotes the first non-singleton dimension.
+       \note NaN values are ignored
     */
     AFAPI array max(const array &in, const int dim = -1);
 
@@ -74,11 +106,12 @@ namespace af
        \param[in] dim The dimension along which the values are checked to be all true
        \return    result of checking if values along dimension \p dim are all true
 
-       \ingroup reduce_functrue
+       \ingroup reduce_func_all_true
 
-       \note \p dim is -1 by default. -1 denotes the first non-signleton dimension.
+       \note \p dim is -1 by default. -1 denotes the first non-singleton dimension.
+       \note NaN values are ignored
     */
-    AFAPI array alltrue(const array &in, const int dim = -1);
+    AFAPI array allTrue(const array &in, const int dim = -1);
 
     /**
        C++ Interface for checking any true values in an array
@@ -87,14 +120,15 @@ namespace af
        \param[in] dim The dimension along which the values are checked to be any true
        \return    result of checking if values along dimension \p dim are any true
 
-       \ingroup reduce_func_anytrue
+       \ingroup reduce_func_any_true
 
-       \note \p dim is -1 by default. -1 denotes the first non-signleton dimension.
+       \note \p dim is -1 by default. -1 denotes the first non-singleton dimension.
+       \note NaN values are ignored
     */
-    AFAPI array anytrue(const array &in, const int dim = -1);
+    AFAPI array anyTrue(const array &in, const int dim = -1);
 
     /**
-       C++ Interface for counting non zero values in an array
+       C++ Interface for counting non-zero values in an array
 
        \param[in] in is the input array
        \param[in] dim The dimension along which the the number of non-zero values are counted
@@ -102,7 +136,8 @@ namespace af
 
        \ingroup reduce_func_count
 
-       \note \p dim is -1 by default. -1 denotes the first non-signleton dimension.
+       \note \p dim is -1 by default. -1 denotes the first non-singleton dimension.
+       \note NaN values are treated as non zero.
     */
     AFAPI array count(const array &in, const int dim = -1);
 
@@ -116,6 +151,19 @@ namespace af
     */
     template<typename T> T sum(const array &in);
 
+#if AF_API_VERSION >= 31
+    /**
+       C++ Interface for sum of all elements in an array while replacing nan values
+
+       \param[in] in is the input array
+       \param[in] nanval  Replace nans with the value passed to this function
+       \return    the sum of all values of \p in
+
+       \ingroup reduce_func_sum
+    */
+    template<typename T> T sum(const array &in, double nanval);
+#endif
+
     /**
        C++ Interface for product of all elements in an array
 
@@ -126,6 +174,19 @@ namespace af
     */
     template<typename T> T product(const array &in);
 
+#if AF_API_VERSION >= 31
+    /**
+       C++ Interface for product of all elements in an array while replacing nan values
+
+       \param[in] in is the input array
+       \param[in] nanval  Replace nans with the value passed to this function
+       \return    the product of all values of \p in
+
+       \ingroup reduce_func_product
+    */
+    template<typename T> T product(const array &in, double nanval);
+#endif
+
     /**
        C++ Interface for getting minimum value of an array
 
@@ -133,6 +194,8 @@ namespace af
        \return    the minimum of all values of \p in
 
        \ingroup reduce_func_min
+
+       \note NaN values are ignored
     */
     template<typename T> T min(const array &in);
 
@@ -143,6 +206,8 @@ namespace af
        \return    the maximum of all values of \p in
 
        \ingroup reduce_func_max
+
+       \note NaN values are ignored
     */
     template<typename T> T max(const array &in);
 
@@ -152,9 +217,11 @@ namespace af
        \param[in] in is the input array
        \return    true if all values of \p in are true, false otherwise
 
-       \ingroup reduce_func_alltrue
+       \ingroup reduce_func_all_true
+
+       \note NaN values are ignored
     */
-    template<typename T> T alltrue(const array &in);
+    template<typename T> T allTrue(const array &in);
 
     /**
        C++ Interface for checking if any values in an array are true
@@ -162,17 +229,21 @@ namespace af
        \param[in] in is the input array
        \return    true if any values of \p in are true, false otherwise
 
-       \ingroup reduce_func_anytrue
+       \ingroup reduce_func_any_true
+
+       \note NaN values are ignored
     */
-    template<typename T> T anytrue(const array &in);
+    template<typename T> T anyTrue(const array &in);
 
     /**
-       C++ Interface for counting total number of non zero values in an array
+       C++ Interface for counting total number of non-zero values in an array
 
        \param[in] in is the input array
        \return    the number of non-zero values in \p in
 
        \ingroup reduce_func_count
+
+       \note NaN values are treated as non zero
     */
     template<typename T> T count(const array &in);
 
@@ -186,7 +257,9 @@ namespace af
 
        \ingroup reduce_func_min
 
-       \note \p dim is -1 by default. -1 denotes the first non-signleton dimension.
+       \note \p dim is -1 by default. -1 denotes the first non-singleton dimension.
+
+       \note NaN values are ignored
     */
     AFAPI void min(array &val, array &idx, const array &in, const int dim = -1);
 
@@ -200,34 +273,40 @@ namespace af
 
        \ingroup reduce_func_max
 
-       \note \p dim is -1 by default. -1 denotes the first non-signleton dimension.
+       \note \p dim is -1 by default. -1 denotes the first non-singleton dimension.
+
+       \note NaN values are ignored
     */
     AFAPI void max(array &val, array &idx, const array &in, const int dim = -1);
 
     /**
-       C++ Interface for getting minimum value and it's location from the entire array
+       C++ Interface for getting minimum value and its location from the entire array
 
        \param[out] val will contain the minimum values in the input
        \param[out] idx will contain the locations of minimum all values in the input
        \param[in]  in is the input array
 
        \ingroup reduce_func_min
+
+       \note NaN values are ignored
     */
     template<typename T> void min(T *val, unsigned *idx, const array &in);
 
     /**
-       C++ Interface for getting maximum value and it's location from the entire array
+       C++ Interface for getting maximum value and its location from the entire array
 
        \param[out] val contains the maximum values in the input
        \param[out] idx contains the locations of maximum all values in the input
        \param[in]  in is the input array
 
        \ingroup reduce_func_max
+
+       \note NaN values are ignored
     */
     template<typename T> void max(T *val, unsigned *idx, const array &in);
 
     /**
-       C++ Interface exclusive sum (cumulative sum) of an array
+       C++ Interface inclusive sum (cumulative sum) of an array
 
        \param[in] in is the input array
        \param[in] dim The dimension along which exclusive sum is performed
@@ -236,6 +315,35 @@ namespace af
        \ingroup scan_func_accum
     */
     AFAPI array accum(const array &in, const int dim = 0);
+
+#if AF_API_VERSION >=34
+    /**
+       C++ Interface generalized scan of an array
+
+       \param[in] in is the input array
+       \param[in] dim The dimension along which scan is performed
+       \param[in] op is the type of binary operation used
+       \param[in] inclusive_scan is flag specifying whether scan is inclusive
+       \return the output containing scan of the input
+
+       \ingroup scan_func_scan
+    */
+    AFAPI array scan(const array &in, const int dim = 0, binaryOp op = AF_BINARY_ADD, bool inclusive_scan = true);
+
+    /**
+       C++ Interface generalized scan by key of an array
+
+       \param[in] key is the key array
+       \param[in] in is the input array
+       \param[in] dim The dimension along which scan is performed
+       \param[in] op is the type of binary operations used
+       \param[in] inclusive_scan is flag specifying whether scan is inclusive
+       \return the output containing scan of the input
+
+       \ingroup scan_func_scanbykey
+    */
+    AFAPI array scanByKey(const array &key, const array& in, const int dim = 0, binaryOp op = AF_BINARY_ADD, bool inclusive_scan = true);
+#endif
 
     /**
        C++ Interface for finding the locations of non-zero values in an array
@@ -252,7 +360,7 @@ namespace af
 
        \param[in] in is the input array
        \param[in] dim The dimension along which numerical difference is performed
-       \return output of first order numerical difference
+       \return array of first order numerical difference
 
        \ingroup calc_func_diff1
     */
@@ -263,7 +371,7 @@ namespace af
 
        \param[in] in is the input array
        \param[in] dim The dimension along which numerical difference is performed
-       \return output of second order numerical difference
+       \return array of second order numerical difference
 
        \ingroup calc_func_diff2
     */
@@ -278,8 +386,6 @@ namespace af
        \return the sorted output
 
        \ingroup sort_func_sort
-
-       \note \p dim is currently restricted to 0.
     */
     AFAPI array sort(const array &in, const unsigned dim = 0, const bool isAscending = true);
 
@@ -292,9 +398,7 @@ namespace af
        \param[in] dim The dimension along which numerical difference is performed
        \param[in] isAscending specifies the sorting order
 
-       \ingroup sort_func_sort
-
-       \note \p dim is currently restricted to 0.
+       \ingroup sort_func_sort_index
     */
     AFAPI void  sort(array &out, array &indices, const array &in, const unsigned dim = 0,
                      const bool isAscending = true);
@@ -308,9 +412,7 @@ namespace af
        \param[in] dim The dimension along which numerical difference is performed
        \param[in] isAscending specifies the sorting order
 
-       \ingroup sort_func_sort
-
-       \note \p dim is currently restricted to 0.
+       \ingroup sort_func_sort_keys
     */
     AFAPI void  sort(array &out_keys, array &out_values, const array &keys, const array &values,
                      const unsigned dim = 0, const bool isAscending = true);
@@ -324,7 +426,7 @@ namespace af
 
        \ingroup set_func_unique
     */
-    AFAPI array setunique(const array &in, bool is_sorted=false);
+    AFAPI array setUnique(const array &in, const bool is_sorted=false);
 
     /**
        C++ Interface for performing union of two arrays
@@ -336,7 +438,7 @@ namespace af
 
        \ingroup set_func_union
     */
-    AFAPI array setunion(const array &first, const array &second, bool is_unique=false);
+    AFAPI array setUnion(const array &first, const array &second, const bool is_unique=false);
 
     /**
        C++ Interface for performing intersect of two arrays
@@ -348,7 +450,7 @@ namespace af
 
        \ingroup set_func_intersect
     */
-    AFAPI array setintersect(const array &first, const array &second, bool is_unique=false);
+    AFAPI array setIntersect(const array &first, const array &second, const bool is_unique=false);
 }
 #endif
 
@@ -368,6 +470,21 @@ extern "C" {
     */
     AFAPI af_err af_sum(af_array *out, const af_array in, const int dim);
 
+#if AF_API_VERSION >= 31
+    /**
+       C Interface for sum of elements in an array while replacing nans
+
+       \param[out] out will contain the sum of all values in \p in along \p dim
+       \param[in] in is the input array
+       \param[in] dim The dimension along which the add operation occurs
+       \param[in] nanval Replace nans with the value passed to this function
+       \return \ref AF_SUCCESS if the execution completes properly
+
+       \ingroup reduce_func_sum
+    */
+    AFAPI af_err af_sum_nan(af_array *out, const af_array in, const int dim, const double nanval);
+#endif
+
     /**
        C Interface for product of elements in an array
 
@@ -379,6 +496,21 @@ extern "C" {
        \ingroup reduce_func_product
     */
     AFAPI af_err af_product(af_array *out, const af_array in, const int dim);
+
+#if AF_API_VERSION >= 31
+    /**
+       C Interface for product of elements in an array while replacing nans
+
+       \param[out] out will contain the product of all values in \p in along \p dim
+       \param[in] in is the input array
+       \param[in] dim The dimension along which the add operation occurs
+       \param[in] nanval Replace nans with the value passed to this function
+       \return \ref AF_SUCCESS if the execution completes properly
+
+       \ingroup reduce_func_product
+    */
+    AFAPI af_err af_product_nan(af_array *out, const af_array in, const int dim, const double nanval);
+#endif
 
     /**
        C Interface for minimum values in an array
@@ -412,9 +544,9 @@ extern "C" {
        \param[in] dim The dimension along which the "and" operation occurs
        \return \ref AF_SUCCESS if the execution completes properly
 
-       \ingroup reduce_func_alltrue
+       \ingroup reduce_func_all_true
     */
-    AFAPI af_err af_alltrue(af_array *out, const af_array in, const int dim);
+    AFAPI af_err af_all_true(af_array *out, const af_array in, const int dim);
 
     /**
        C Interface for checking any true values in an array
@@ -424,12 +556,12 @@ extern "C" {
        \param[in] dim The dimension along which the "or" operation occurs
        \return \ref AF_SUCCESS if the execution completes properly
 
-       \ingroup reduce_func_anytrue
+       \ingroup reduce_func_any_true
     */
-    AFAPI af_err af_anytrue(af_array *out, const af_array in, const int dim);
+    AFAPI af_err af_any_true(af_array *out, const af_array in, const int dim);
 
     /**
-       C Interface for counting non zero values in an array
+       C Interface for counting non-zero values in an array
 
        \param[out] out will contain the number of non-zero values in \p in along \p dim
        \param[in] in is the input array
@@ -454,6 +586,23 @@ extern "C" {
     */
     AFAPI af_err af_sum_all(double *real, double *imag, const af_array in);
 
+#if AF_API_VERSION >= 31
+    /**
+       C Interface for sum of all elements in an array while replacing nans
+
+       \param[out] real will contain the real part of adding all elements in input \p in
+       \param[out] imag will contain the imaginary part of adding all elements in input \p in
+       \param[in] in is the input array
+       \param[in] nanval is the value which replaces nan
+       \return \ref AF_SUCCESS if the execution completes properly
+
+       \note \p imag is always set to 0 when \p in is real
+
+       \ingroup reduce_func_sum
+    */
+    AFAPI af_err af_sum_nan_all(double *real, double *imag, const af_array in, const double nanval);
+#endif
+
     /**
        C Interface for product of all elements in an array
 
@@ -467,6 +616,23 @@ extern "C" {
        \ingroup reduce_func_product
     */
     AFAPI af_err af_product_all(double *real, double *imag, const af_array in);
+
+#if AF_API_VERSION >= 31
+    /**
+       C Interface for product of all elements in an array while replacing nans
+
+       \param[out] real will contain the real part of adding all elements in input \p in
+       \param[out] imag will contain the imaginary part of adding all elements in input \p in
+       \param[in] in is the input array
+       \param[in] nanval is the value which replaces nan
+       \return \ref AF_SUCCESS if the execution completes properly
+
+       \note \p imag is always set to 0 when \p in is real
+
+       \ingroup reduce_func_product
+    */
+    AFAPI af_err af_product_nan_all(double *real, double *imag, const af_array in, const double nanval);
+#endif
 
     /**
        C Interface for getting minimum value of an array
@@ -499,33 +665,33 @@ extern "C" {
     /**
        C Interface for checking if all values in an array are true
 
-       \param[out] real is 1 if all values of input \p in are true. 0 otherwise.
+       \param[out] real is 1 if all values of input \p in are true, 0 otherwise.
        \param[out] imag is always set to 0.
        \param[in] in is the input array
        \return \ref AF_SUCCESS if the execution completes properly
 
        \note \p imag is always set to 0.
 
-       \ingroup reduce_func_alltrue
+       \ingroup reduce_func_all_true
     */
-    AFAPI af_err af_alltrue_all(double *real, double *imag, const af_array in);
+    AFAPI af_err af_all_true_all(double *real, double *imag, const af_array in);
 
     /**
        C Interface for checking if any values in an array are true
 
-       \param[out] real is 1 if any value of input \p in is true. 0 otherwise.
+       \param[out] real is 1 if any value of input \p in is true, 0 otherwise.
        \param[out] imag is always set to 0.
        \param[in] in is the input array
        \return \ref AF_SUCCESS if the execution completes properly
 
        \note \p imag is always set to 0.
 
-       \ingroup reduce_func_anytrue
+       \ingroup reduce_func_any_true
     */
-    AFAPI af_err af_anytrue_all(double *real, double *imag, const af_array in);
+    AFAPI af_err af_any_true_all(double *real, double *imag, const af_array in);
 
     /**
-       C Interface for counting total number of non zero values in an array
+       C Interface for counting total number of non-zero values in an array
 
        \param[out] real will contain the number of non-zero values in \p in.
        \param[out] imag is always set to 0.
@@ -565,7 +731,7 @@ extern "C" {
     AFAPI af_err af_imax(af_array *out, af_array *idx, const af_array in, const int dim);
 
     /**
-       C Interface for getting minimum value and it's location from the entire array
+       C Interface for getting minimum value and its location from the entire array
 
        \param[out] real will contain the real part of minimum value of all elements in input \p in
        \param[out] imag will contain the imaginary part of minimum value of all elements in input \p in
@@ -595,7 +761,7 @@ extern "C" {
     AFAPI af_err af_imax_all(double *real, double *imag, unsigned *idx, const af_array in);
 
     /**
-       C Interface exclusive sum (cumulative sum) of an array
+       C Interface inclusive sum (cumulative sum) of an array
 
        \param[out] out will contain exclusive sums of the input
        \param[in] in is the input array
@@ -605,6 +771,37 @@ extern "C" {
        \ingroup scan_func_accum
     */
     AFAPI af_err af_accum(af_array *out, const af_array in, const int dim);
+
+#if AF_API_VERSION >=34
+    /**
+       C Interface generalized scan of an array
+
+       \param[out] out will contain scan of the input
+       \param[in] in is the input array
+       \param[in] dim The dimension along which scan is performed
+       \param[in] op is the type of binary operations used
+       \param[in] inclusive_scan is flag specifying whether scan is inclusive
+       \return \ref AF_SUCCESS if the execution completes properly
+
+       \ingroup scan_func_scan
+    */
+    AFAPI af_err af_scan(af_array *out, const af_array in, const int dim, af_binary_op op, bool inclusive_scan);
+
+    /**
+       C Interface generalized scan by key of an array
+
+       \param[out] out will contain scan of the input
+       \param[in] key is the key array
+       \param[in] in is the input array
+       \param[in] dim The dimension along which scan is performed
+       \param[in] op is the type of binary operations used
+       \param[in] inclusive_scan is flag specifying whether scan is inclusive
+       \return \ref AF_SUCCESS if the execution completes properly
+
+       \ingroup scan_func_scanbykey
+    */
+    AFAPI af_err af_scan_by_key(af_array *out, const af_array key, const af_array in, const int dim, af_binary_op op, bool inclusive_scan);
+#endif
 
     /**
        C Interface for finding the locations of non-zero values in an array
@@ -651,8 +848,6 @@ extern "C" {
        \return \ref AF_SUCCESS if the execution completes properly
 
        \ingroup sort_func_sort
-
-       \note \p dim is currently restricted to 0.
     */
     AFAPI af_err af_sort(af_array *out, const af_array in, const unsigned dim, const bool isAscending);
 
@@ -666,9 +861,7 @@ extern "C" {
        \param[in] isAscending specifies the sorting order
        \return \ref AF_SUCCESS if the execution completes properly
 
-       \ingroup sort_func_sort
-
-       \note \p dim is currently restricted to 0.
+       \ingroup sort_func_sort_index
     */
     AFAPI af_err af_sort_index(af_array *out, af_array *indices, const af_array in,
                                const unsigned dim, const bool isAscending);
@@ -683,9 +876,7 @@ extern "C" {
        \param[in] isAscending specifies the sorting order
        \return \ref AF_SUCCESS if the execution completes properly
 
-       \ingroup sort_func_sort
-
-       \note \p dim is currently restricted to 0.
+       \ingroup sort_func_sort_keys
     */
     AFAPI af_err af_sort_by_key(af_array *out_keys, af_array *out_values,
                                 const af_array keys, const af_array values,

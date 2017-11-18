@@ -38,7 +38,7 @@ class Reorder : public ::testing::Test
 };
 
 // create a list of types to be tested
-typedef ::testing::Types<float, double, cfloat, cdouble, int, unsigned int, char, unsigned char> TestTypes;
+typedef ::testing::Types<float, double, cfloat, cdouble, int, unsigned int, char, unsigned char, short, ushort> TestTypes;
 
 // register the type list
 TYPED_TEST_CASE(Reorder, TestTypes);
@@ -84,9 +84,9 @@ void reorderTest(string pTestFile, const unsigned resultIdx,
     // Delete
     delete[] outData;
 
-    if(inArray   != 0) af_destroy_array(inArray);
-    if(outArray  != 0) af_destroy_array(outArray);
-    if(tempArray != 0) af_destroy_array(tempArray);
+    if(inArray   != 0) af_release_array(inArray);
+    if(outArray  != 0) af_release_array(outArray);
+    if(tempArray != 0) af_release_array(tempArray);
 }
 
 #define REORDER_INIT(desc, file, resultIdx, x, y, z, w)                                        \
@@ -134,8 +134,6 @@ void reorderTest(string pTestFile, const unsigned resultIdx,
 //
 TEST(Reorder, CPP)
 {
-    if (noDoubleTests<float>()) return;
-
     const unsigned resultIdx = 0;
     const unsigned x = 0;
     const unsigned y = 1;
@@ -166,3 +164,42 @@ TEST(Reorder, CPP)
     delete[] outData;
 }
 
+TEST(Reorder, ISSUE_1777)
+{
+    const int m = 5;
+    const int n = 4;
+    const int k = 3;
+    vector<float> h_input(m * n);
+
+    for (int i = 0; i < m * n; i++) {
+        h_input[i] = (float)(i);
+    }
+
+    af::array a(m, n, &h_input[0]);
+    af::array a_t = af::tile(a, 1, 1, 3);
+    af::array a_r = af::reorder(a_t, 0, 2, 1);
+
+    vector<float> h_output(m * n * k);
+    a_r.host((void *)&h_output[0]);
+    for (int z = 0; z < n; z++) {
+        for (int y = 0; y < k; y++) {
+            for (int x = 0; x < m; x++) {
+                ASSERT_EQ(h_output[z * k * m + y * m + x], h_input[z * m + x]);
+            }
+        }
+    }
+}
+
+TEST(Reorder, MaxDim)
+{
+    if (noDoubleTests<float>()) return;
+
+    const size_t largeDim = 65535 * 32 + 1 ;
+
+    af::array input  = af::range(af::dim4(2, largeDim, 2), 2);
+    af::array output = af::reorder(input, 2, 1, 0);
+
+    af::array gold = af::range(af::dim4(2, largeDim, 2));
+
+    ASSERT_TRUE(af::allTrue<bool>(output == gold));
+}

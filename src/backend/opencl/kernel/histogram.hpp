@@ -12,79 +12,75 @@
 #include <program.hpp>
 #include <traits.hpp>
 #include <string>
-#include <mutex>
-#include <map>
-#include <dispatch.hpp>
+#include <cache.hpp>
+#include <common/dispatch.hpp>
 #include <Param.hpp>
 #include <debug_opencl.hpp>
 
+using cl::Buffer;
+using cl::EnqueueArgs;
 using cl::Kernel;
+using cl::KernelFunctor;
+using cl::NDRange;
+using cl::Program;
 
 namespace opencl
 {
-
 namespace kernel
 {
-
 static const unsigned MAX_BINS  = 4000;
-static const dim_type THREADS_X =  256;
-static const dim_type THRD_LOAD =   16;
+static const int THREADS_X =  256;
+static const int THRD_LOAD =   16;
 
-template<typename inType, typename outType>
-void histogram(Param out, const Param in, const Param minmax, dim_type nbins)
+template<typename inType, typename outType, bool isLinear>
+void histogram(Param out, const Param in, int nbins, float minval, float maxval)
 {
-    try {
-        static std::once_flag compileFlags[DeviceManager::MAX_DEVICES];
-        static std::map<int, Program*> histProgs;
-        static std::map<int, Kernel *> histKernels;
+    std::string refName = std::string("histogram_") +
+        std::string(dtype_traits<inType>::getName()) +
+        std::string(dtype_traits<inType>::getName()) +
+        std::to_string(isLinear);
 
-        int device = getActiveDeviceId();
+    int device = getActiveDeviceId();
+    kc_entry_t entry = kernelCache(device, refName);
 
-        std::call_once( compileFlags[device], [device] () {
-                    std::ostringstream options;
-                    options << " -D inType=" << dtype_traits<inType>::getName()
-                            << " -D outType=" << dtype_traits<outType>::getName()
-                            << " -D THRD_LOAD=" << THRD_LOAD;
+    if (entry.prog==0 && entry.ker==0) {
+        std::ostringstream options;
+        options << " -D inType=" << dtype_traits<inType>::getName()
+            << " -D outType=" << dtype_traits<outType>::getName()
+            << " -D THRD_LOAD=" << THRD_LOAD
+            << " -D MAX_BINS=" << MAX_BINS;
+        if (isLinear)
+            options << " -D IS_LINEAR";
+        if (std::is_same<inType, double>::value ||
+                std::is_same<inType, cdouble>::value) {
+            options << " -D USE_DOUBLE";
+        }
 
-                    if (std::is_same<inType, double>::value ||
-                        std::is_same<inType, cdouble>::value) {
-                        options << " -D USE_DOUBLE";
-                    }
+        const char* ker_strs[] = {histogram_cl};
+        const int   ker_lens[] = {histogram_cl_len};
+        Program prog;
+        buildProgram(prog, 1, ker_strs, ker_lens, options.str());
+        entry.prog = new Program(prog);
+        entry.ker  = new Kernel(*entry.prog, "histogram");
 
-                    Program prog;
-                    buildProgram(prog, histogram_cl, histogram_cl_len, options.str());
-                    histProgs[device]   = new Program(prog);
-                    histKernels[device] = new Kernel(*histProgs[device], "histogram");
-                });
-
-        auto histogramOp = make_kernel<Buffer, KParam, Buffer, KParam,
-                                       Buffer, cl::LocalSpaceArg,
-                                       dim_type, dim_type, dim_type
-                                      >(*histKernels[device]);
-
-        NDRange local(THREADS_X, 1);
-
-        dim_type numElements = in.info.dims[0]*in.info.dims[1];
-
-        dim_type blk_x       = divup(numElements, THRD_LOAD*THREADS_X);
-
-        dim_type batchCount  = in.info.dims[2];
-
-        NDRange global(blk_x*THREADS_X, batchCount);
-
-        dim_type locSize = nbins * sizeof(outType);
-
-        histogramOp(EnqueueArgs(getQueue(), global, local),
-                *out.data, out.info, *in.data, in.info, *minmax.data,
-                cl::Local(locSize), numElements, nbins, blk_x);
-
-        CL_DEBUG_FINISH(getQueue());
-    } catch (cl::Error err) {
-        CL_TO_AF_ERROR(err);
-        throw;
+        addKernelToCache(device, refName, entry);
     }
-}
 
-}
+    auto histogramOp = KernelFunctor< Buffer, KParam, Buffer, KParam, cl::LocalSpaceArg,
+                                      int, int, float, float, int >(*entry.ker);
 
+    int nElems = in.info.dims[0]*in.info.dims[1];
+    int blk_x  = divup(nElems, THRD_LOAD*THREADS_X);
+    int locSize = nbins <= MAX_BINS ? (nbins * sizeof(outType)) : 1;
+
+    NDRange local(THREADS_X, 1);
+    NDRange global(blk_x*in.info.dims[2]*THREADS_X, in.info.dims[3]);
+
+    histogramOp(EnqueueArgs(getQueue(), global, local),
+                *out.data, out.info, *in.data, in.info,
+                cl::Local(locSize), nElems, nbins, minval, maxval, blk_x);
+
+    CL_DEBUG_FINISH(getQueue());
+}
+}
 }

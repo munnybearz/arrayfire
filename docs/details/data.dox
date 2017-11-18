@@ -1,0 +1,304 @@
+/**
+\addtogroup arrayfire_func
+@{
+
+\defgroup data_func_constant constant
+
+\brief Create a array from a scalar input value
+
+The array created has the same value at all locations
+
+\ingroup data_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup data_func_identity identity
+
+\brief Create an identity array with diagonal values 1
+
+\code
+array a = identity(5, 3);
+// a [5 3 1 1]
+// 1.0000     0.0000     0.0000
+// 0.0000     1.0000     0.0000
+// 0.0000     0.0000     1.0000
+// 0.0000     0.0000     0.0000
+// 0.0000     0.0000     0.0000
+\endcode
+
+\ingroup data_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup data_func_range range
+
+\brief Creates an array with [0, n] values along the seq_dim which is tiled across other dimensions
+
+\code
+// Generates an array of [0, 4] along first dimension
+array a = range(dim4(5));        // a = [0,
+                                 //      1,
+                                 //      2,
+                                 //      3,
+                                 //      4]
+
+// Generates an array of [0, 4] along first dimension, tiled along second dimension
+array b = range(dim4(5, 2));     // a = [0, 0,
+                                 //      1, 1,
+                                 //      2, 2,
+                                 //      3, 3,
+                                 //      4, 4]
+
+// Generates an array of [0, 2] along second dimension, tiled along first dimension
+array c = range(dim4(5, 3), 1);  // c = [0, 1, 2,
+                                 //      0, 1, 2,
+                                 //      0, 1, 2,
+                                 //      0, 1, 2,
+                                 //      0, 1, 2]
+\endcode
+
+\ingroup data_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup data_func_iota iota
+
+\brief Create an sequence [0, dims.elements() - 1] and modify to specified dimensions dims and then tile it according to tile_dims
+
+\code
+// Generate [0, 5x3 - 1] in dimensions 5, 3
+array a = iota(dim4(5, 3))
+// a [5 3 1 1]
+// 0.0000     5.0000    10.0000
+// 1.0000     6.0000    11.0000
+// 2.0000     7.0000    12.0000
+// 3.0000     8.0000    13.0000
+// 4.0000     9.0000    14.0000
+
+// Generate [0, 5x3 - 1] in dimensions 5, 3 and then tile once along
+// dim0 and twice along dim1
+array b = iota(dim4(5, 3), dim4(1, 2))
+// b [5 6 1 1]
+// 0.0000     5.0000    10.0000     0.0000     5.0000    10.0000
+// 1.0000     6.0000    11.0000     1.0000     6.0000    11.0000
+// 2.0000     7.0000    12.0000     2.0000     7.0000    12.0000
+// 3.0000     8.0000    13.0000     3.0000     8.0000    13.0000
+// 4.0000     9.0000    14.0000     4.0000     9.0000    14.0000
+\endcode
+
+\ingroup data_mat
+\ingroup arrafire_func
+
+=======================================================================
+
+\defgroup data_func_diag diag
+\brief Extract diagonal from a matrix when \p extract is set to true. Create a diagonal matrix from input array when \p extract is set to false
+
+\code
+// Extraction
+array a = randu(dim4(4, 3));
+// a [4 3 1 1]
+// 0.0000     0.5328     0.6793
+// 0.1315     0.2190     0.9347
+// 0.7556     0.0470     0.3835
+// 0.4587     0.6789     0.5194
+
+array b = diag(a);
+// b [3 1 1 1]
+// 0.0000
+// 0.2190
+// 0.3835
+
+array c = diag(a, 1);
+// c [2 1 1 1]
+// 0.5328
+// 0.9347
+
+// Creation
+array a = randu(4);
+// a [4 1 1 1]
+// 0.0000
+// 0.1315
+// 0.7556
+// 0.4587
+
+array b = diag(a, 0, false);
+// b [4 4 1 1]
+// 0.0000     0.0000     0.0000     0.0000
+// 0.0000     0.1315     0.0000     0.0000
+// 0.0000     0.0000     0.7556     0.0000
+// 0.0000     0.0000     0.0000     0.4587
+
+array b = diag(a, -1, false);
+// c [5 5 1 1]
+// 0.0000     0.0000     0.0000     0.0000     0.0000
+// 0.0000     0.0000     0.0000     0.0000     0.0000
+// 0.0000     0.1315     0.0000     0.0000     0.0000
+// 0.0000     0.0000     0.7556     0.0000     0.0000
+// 0.0000     0.0000     0.0000     0.4587     0.0000
+\endcode
+
+\ingroup data_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup manip_func_join join
+
+\brief Join up to 4 arrays along specified dimension.
+
+Requires that all dimensions except the join dimension must be the same for all arrays.
+
+\ingroup manip_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup manip_func_tile tile
+
+\brief Tile the input array along specified dimensions
+
+Creates copys of the array a specified number of times within the output array
+
+\ingroup manip_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup manip_func_reorder reorder
+
+\brief Reorder an array according to the specified dimensions.
+
+Exchanges data of an array such that the requested change in dimension
+is satisfied. The linear ordering of data within the array is preserved.
+
+\code
+a [2 2 3 1]
+    1.0000     3.0000
+    2.0000     4.0000
+
+    1.0000     3.0000
+    2.0000     4.0000
+
+    1.0000     3.0000
+    2.0000     4.0000
+
+
+reorder(a, 1, 0, 2) [2 2 3 1]  //equivalent to a transpose
+    1.0000     2.0000
+    3.0000     4.0000
+
+    1.0000     2.0000
+    3.0000     4.0000
+
+    1.0000     2.0000
+    3.0000     4.0000
+
+
+reorder(a, 2, 0, 1) [3 2 2 1]
+    1.0000     2.0000
+    1.0000     2.0000
+    1.0000     2.0000
+
+    3.0000     4.0000
+    3.0000     4.0000
+    3.0000     4.0000
+\endcode
+
+\ingroup manip_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup manip_func_shift shift
+
+\brief Circular shift slong specified dimensions
+
+Shifts the values in a circular fashion along the specified dimesion.
+
+\ingroup manip_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup manip_func_moddims moddims
+
+\brief Modify the input dimensions without changing the data order
+
+Simply modifies the metadata. This is a noop.
+
+\ingroup manip_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup manip_func_flat flat
+
+\brief Flatten the input to a single dimension
+
+Simply returns the array as a vector. This is a noop.
+
+\ingroup manip_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup manip_func_flip flip
+
+\brief Flip the input along specified dimension
+
+Mirrors the array along the specified dimensions.
+
+\ingroup manip_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup data_func_lower lower
+
+\brief Create a lower triangular matrix from input array
+
+\ingroup data_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup data_func_upper upper
+
+\brief Create a upper triangular matrix from input array
+
+\ingroup data_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup data_func_select select
+
+\brief Select elements from two arrays based on an conditional array
+
+If the condition array has an element as true, then the element from
+the lhs array/value is selected, otherwise the element from the rhs
+array/value is selected.
+
+\ingroup manip_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+\defgroup data_func_replace replace
+
+\brief Replace elements of an array based on an conditional array
+
+- Input values are retained when corresponding elements from condition array are true.
+- Input values are replaced when corresponding elements from condition array are false.
+
+\ingroup manip_mat
+\ingroup arrayfire_func
+
+=======================================================================
+
+@}
+*/

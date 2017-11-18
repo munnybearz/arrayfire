@@ -10,7 +10,7 @@
 #include <complex>
 #include <af/dim4.hpp>
 #include <af/algorithm.h>
-#include <err_common.hpp>
+#include <common/err_common.hpp>
 #include <handle.hpp>
 #include <ops.hpp>
 #include <where.hpp>
@@ -29,7 +29,13 @@ static inline af_array where(const af_array in)
 af_err af_where(af_array *idx, const af_array in)
 {
     try {
-        af_dtype type = getInfo(in).getType();
+        const ArrayInfo& i_info = getInfo(in);
+        af_dtype type = i_info.getType();
+
+        if(i_info.ndims() == 0) {
+            return af_create_handle(idx, 0, nullptr, u32);
+        }
+
         af_array res;
         switch(type) {
         case f32: res = where<float  >(in); break;
@@ -38,6 +44,10 @@ af_err af_where(af_array *idx, const af_array in)
         case c64: res = where<cdouble>(in); break;
         case s32: res = where<int    >(in); break;
         case u32: res = where<uint   >(in); break;
+        case s64: res = where<intl   >(in); break;
+        case u64: res = where<uintl  >(in); break;
+        case s16: res = where<short  >(in); break;
+        case u16: res = where<ushort >(in); break;
         case u8 : res = where<uchar  >(in); break;
         case b8 : res = where<char   >(in); break;
         default:

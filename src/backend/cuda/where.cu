@@ -8,8 +8,6 @@
  ********************************************************/
 
 #include <af/dim4.hpp>
-#include <af/defines.h>
-#include <ArrayInfo.hpp>
 #include <Array.hpp>
 #include <err_cuda.hpp>
 
@@ -25,7 +23,7 @@ namespace cuda
     {
         Param<uint> out;
         kernel::where<T>(out, in);
-        return createParamArray<uint>(out);
+        return createParamArray<uint>(out, true);
     }
 
 
@@ -39,6 +37,10 @@ namespace cuda
     INSTANTIATE(char   )
     INSTANTIATE(int    )
     INSTANTIATE(uint   )
+    INSTANTIATE(intl   )
+    INSTANTIATE(uintl  )
     INSTANTIATE(uchar  )
+    INSTANTIATE(short  )
+    INSTANTIATE(ushort )
 
 }

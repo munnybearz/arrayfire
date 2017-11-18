@@ -7,11 +7,10 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <af/defines.h>
 #include <ops.hpp>
 #include <backend.hpp>
 #include <Param.hpp>
-#include <dispatch.hpp>
+#include <common/dispatch.hpp>
 #include <math.hpp>
 #include <err_cuda.hpp>
 #include <debug_cuda.hpp>
@@ -38,9 +37,9 @@ namespace kernel
         const uint tidy = threadIdx.y;
 
         const uint zid = blockIdx.x / blocks_x;
-        const uint wid = blockIdx.y / blocks_y;
+        const uint wid = (blockIdx.y + blockIdx.z * gridDim.y) / blocks_y;
         const uint blockIdx_x = blockIdx.x - (blocks_x) * zid;
-        const uint blockIdx_y = blockIdx.y - (blocks_y) * wid;
+        const uint blockIdx_y = (blockIdx.y + blockIdx.z * gridDim.y) - (blocks_y) * wid;
         const uint xid = blockIdx_x * blockDim.x * lim + tidx;
         const uint yid = blockIdx_y * blockDim.y + tidy;
 
@@ -95,13 +94,14 @@ namespace kernel
             otmp.strides[k] = otmp.strides[k - 1] * otmp.dims[k - 1];
         }
 
-        dim_type rtmp_elements = rtmp.strides[3] * rtmp.dims[3];
-        rtmp.ptr = memAlloc<uint>(rtmp_elements);
+        int rtmp_elements = rtmp.strides[3] * rtmp.dims[3];
+        int otmp_elements = otmp.strides[3] * otmp.dims[3];
+        auto rtmp_alloc = memAlloc<uint>(rtmp_elements);
+        auto otmp_alloc = memAlloc<uint>(otmp_elements);
+        rtmp.ptr = rtmp_alloc.get();
+        otmp.ptr = otmp_alloc.get();
 
-        dim_type otmp_elements = otmp.strides[3] * otmp.dims[3];
-        otmp.ptr = memAlloc<uint>(otmp_elements);
-
-        scan_first_launcher<T, uint, af_notzero_t, false>(otmp, rtmp, in,
+        scan_first_launcher<T, uint, af_notzero_t, false, true>(otmp, rtmp, in,
                                                           blocks_x, blocks_y,
                                                           threads_x);
 
@@ -113,14 +113,17 @@ namespace kernel
             ltmp.strides[k] = rtmp_elements;
         }
 
-        scan_first<uint, uint, af_add_t>(ltmp, ltmp);
+        scan_first<uint, uint, af_add_t, true>(ltmp, ltmp);
 
         // Get output size and allocate output
         uint total;
-        CUDA_CHECK(cudaMemcpy(&total, rtmp.ptr + rtmp_elements - 1,
-                              sizeof(uint), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpyAsync(&total, rtmp.ptr + rtmp_elements - 1,
+                              sizeof(uint), cudaMemcpyDeviceToHost,
+                              cuda::getActiveStream()));
+        CUDA_CHECK(cudaStreamSynchronize(cuda::getActiveStream()));
 
-        out.ptr = memAlloc<uint>(total);
+        auto out_alloc = memAlloc<uint>(total);
+        out.ptr = out_alloc.get();
 
         out.dims[0] = total;
         out.strides[0] = 1;
@@ -135,11 +138,15 @@ namespace kernel
 
         uint lim = divup(otmp.dims[0], (threads_x * blocks_x));
 
-        (get_out_idx<T>)<<<blocks, threads>>>(out.ptr, otmp, rtmp, in, blocks_x, blocks_y, lim);
+        const int maxBlocksY = cuda::getDeviceProp(cuda::getActiveDeviceId()).maxGridSize[1];
+        blocks.z = divup(blocks.y, maxBlocksY);
+        blocks.y = divup(blocks.y, blocks.z);
+
+        CUDA_LAUNCH((get_out_idx<T>), blocks, threads,
+                out.ptr, otmp, rtmp, in, blocks_x, blocks_y, lim);
         POST_LAUNCH_CHECK();
 
-        memFree(rtmp.ptr);
-        memFree(otmp.ptr);
+        out_alloc.release();
     }
 }
 }

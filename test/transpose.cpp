@@ -17,6 +17,7 @@
 
 using std::string;
 using std::vector;
+using std::abs;
 using af::cfloat;
 using af::cdouble;
 
@@ -37,7 +38,7 @@ class Transpose : public ::testing::Test
 };
 
 // create a list of types to be tested
-typedef ::testing::Types<float, cfloat, double, cdouble, int, uint, char, uchar> TestTypes;
+typedef ::testing::Types<float, cfloat, double, cdouble, int, uint, char, uchar, short, ushort> TestTypes;
 
 // register the type list
 TYPED_TEST_CASE(Transpose, TestTypes);
@@ -67,9 +68,9 @@ void trsTest(string pTestFile, bool isSubRef=false, const vector<af_seq> *seqv=N
         ASSERT_EQ(AF_SUCCESS, af_index(&subArray,inArray,seqv->size(),&seqv->front()));
         ASSERT_EQ(AF_SUCCESS, af_transpose(&outArray,subArray, false));
         // destroy the temporary indexed Array
-        ASSERT_EQ(AF_SUCCESS, af_destroy_array(subArray));
+        ASSERT_EQ(AF_SUCCESS, af_release_array(subArray));
 
-        dim_type nElems;
+        dim_t nElems;
         ASSERT_EQ(AF_SUCCESS, af_get_elements(&nElems,outArray));
         outData = new T[nElems];
     } else {
@@ -89,8 +90,8 @@ void trsTest(string pTestFile, bool isSubRef=false, const vector<af_seq> *seqv=N
 
     // cleanup
     delete[] outData;
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(inArray));
-    ASSERT_EQ(AF_SUCCESS, af_destroy_array(outArray));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(inArray));
+    ASSERT_EQ(AF_SUCCESS, af_release_array(outArray));
 }
 
 TYPED_TEST(Transpose,Vector)
@@ -192,11 +193,11 @@ TEST(Transpose, CPP_f32)
 }
 
 template<typename T>
-void trsCPPConjTest()
+void trsCPPConjTest(dim_t d0, dim_t d1 = 1, dim_t d2 = 1, dim_t d3 = 1)
 {
     vector<af::dim4> numDims;
 
-    af::dim4 dims(40, 40);
+    af::dim4 dims(d0, d1, d2, d3);
 
     if (noDoubleTests<T>()) return;
 
@@ -211,8 +212,8 @@ void trsCPPConjTest()
 
     size_t nElems = dims.elements();
     for (size_t elIter = 0; elIter < nElems; ++elIter) {
-        ASSERT_NEAR(tData[elIter].real(), cData[elIter].real(), 1e-6)<< "at: " << elIter << std::endl;
-        ASSERT_NEAR(-tData[elIter].imag(), cData[elIter].imag(), 1e-6)<< "at: " << elIter << std::endl;
+        ASSERT_NEAR(real(tData[elIter]), real(cData[elIter]), 1e-6)<< "at: " << elIter << std::endl;
+        ASSERT_NEAR(-imag(tData[elIter]), imag(cData[elIter]), 1e-6)<< "at: " << elIter << std::endl;
     }
 
     // cleanup
@@ -220,8 +221,55 @@ void trsCPPConjTest()
     delete[] cData;
 }
 
-TEST(Transpose, CPP_c32_CONJ)
+TEST(Transpose, CPP_c32_CONJ40x40)
 {
-    trsCPPConjTest<cfloat>();
+    trsCPPConjTest<cfloat>(40, 40);
 }
 
+TEST(Transpose, CPP_c32_CONJ2000x1)
+{
+    trsCPPConjTest<cfloat>(2000);
+}
+
+TEST(Transpose, CPP_c32_CONJ20x20x5)
+{
+    trsCPPConjTest<cfloat>(20, 20, 5);
+}
+
+TEST(Transpose, MaxDim)
+{
+    const size_t largeDim = 65535 * 33 + 1;
+
+    af::array input  = af::range(af::dim4(2, largeDim, 1, 1));
+    af::array gold   = af::range(af::dim4(largeDim, 2, 1, 1), 1);
+    af::array output = af::transpose(input);
+
+    ASSERT_EQ(output.dims(0), (int)largeDim);
+    ASSERT_EQ(output.dims(1), 2);
+    ASSERT_TRUE(af::allTrue<bool>(output == gold));
+
+    input  = af::range(af::dim4(2, 5, 1, largeDim));
+    gold   = af::range(af::dim4(5, 2, 1, largeDim), 1);
+    output = af::transpose(input);
+
+    ASSERT_TRUE(af::allTrue<bool>(output == gold));
+}
+
+
+TEST(Transpose, GFOR)
+{
+    using namespace af;
+    dim4 dims = dim4(100, 100, 3);
+    array A = round(100 * randu(dims));
+    array B = constant(0, 100, 100, 3);
+
+    gfor(seq ii, 3) {
+        B(span, span, ii) = A(span, span, ii).T();
+    }
+
+    for(int ii = 0; ii < 3; ii++) {
+        array c_ii = A(span, span, ii).T();
+        array b_ii = B(span, span, ii);
+        ASSERT_EQ(max<double>(abs(c_ii - b_ii)) < 1E-5, true);
+    }
+}

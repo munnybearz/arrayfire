@@ -7,242 +7,204 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <af/dim4.hpp>
+#include <kernel_headers/jit.hpp>
+#include <common/dispatch.hpp>
+#include <err_cuda.hpp>
+
 #include <Array.hpp>
-#include <map>
-#include <iostream>
-#include <stdexcept>
 #include <copy.hpp>
 #include <JIT/Node.hpp>
-#include <ptx_headers/arith.hpp>
-#include <ptx_headers/logic.hpp>
-#include <ptx_headers/exp.hpp>
-#include <ptx_headers/numeric.hpp>
-#include <ptx_headers/trig.hpp>
-#include <ptx_headers/hyper.hpp>
-#include <ptx_headers/cast.hpp>
 #include <platform.hpp>
-#include <dispatch.hpp>
-#include <err_cuda.hpp>
 #include <math.hpp>
-#include <nvvm.h>
-#include <boost/functional/hash.hpp>
+
+#include <af/dim4.hpp>
+#include <nvrtc.h>
+
+#include <array>
+#include <cstdio>
+#include <functional>
+#include <map>
+#include <memory>
+#include <stdexcept>
+#include <thread>
+#include <vector>
 
 namespace cuda
 {
 
 using JIT::Node;
+using JIT::Node_ids;
+using JIT::Node_map_t;
+
+using std::array;
+using std::hash;
+using std::lock_guard;
+using std::map;
+using std::mutex;
+using std::recursive_mutex;
 using std::string;
 using std::stringstream;
-using JIT::str_map_t;
-using JIT::str_map_iter;
+using std::unique_ptr;
+using std::vector;
 
-const char *layout64 = "target datalayout = \"e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64\"\n\n\n";
-const char *layout32 = "target datalayout = \"e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64\"\n\n\n";
-
-const char *triple64 = "target triple = \"nvptx64-unknown-cuda\"\n\n";
-const char *triple32 = "target triple = \"nvptx-unknown-cuda\"\n\n";
-
-static string getFuncName(Node *node, bool is_linear)
+static string getFuncName(const vector<Node *> &output_nodes,
+                          const vector<Node *> &full_nodes,
+                          const vector<Node_ids> &full_ids,
+                          bool is_linear)
 {
-    node->setId(0);
-
     stringstream funcName;
     stringstream hashName;
 
     if (is_linear) funcName << "L_"; //Kernel Linear
     else           funcName << "G_"; //Kernel General
 
-    funcName << node->getNameStr();
-    node->genKerName(funcName);
-    funcName.str();
+    for (const auto &node : output_nodes) {
+        funcName << node->getNameStr() << "_";
+    }
 
-    boost::hash<std::string> hash_fn;
+    for (int i = 0; i < (int)full_nodes.size(); i++) {
+        full_nodes[i]->genKerName(funcName, full_ids[i]);
+    }
 
-    hashName << "@KER";
+    hash<string> hash_fn;
+
+    hashName << "KER";
     hashName << hash_fn(funcName.str());
     return hashName.str();
 }
 
-static string getKernelString(string funcName, Node *node, bool is_linear)
+static string getKernelString(const string funcName,
+                              const vector<Node *> &full_nodes,
+                              const vector<Node_ids> &full_ids,
+                              const vector<int> &output_ids,
+                              bool is_linear)
 {
+
+    const std::string includeFileStr(jit_cuh, jit_cuh_len);
+
+    const std::string paramTStr = R"JIT(
+template<typename T>
+struct Param
+{
+  T *ptr;
+  dim_t dims[4];
+  dim_t strides[4];
+};
+)JIT";
+
+    std::string typedefStr = "typedef unsigned int uint;\n";
+    typedefStr += "typedef ";
+    typedefStr += getFullName<dim_t>();
+    typedefStr += " dim_t;\n";
+
+    // Common CUDA code
+    // This part of the code does not change with the kernel.
+
+    static const char *kernelVoid = "extern \"C\" __global__ void\n";
+    static const char *dimParams = "uint blocks_x, uint blocks_y, uint blocks_x_total, uint num_odims";
+
+    static const char * loopStart = R"JIT(
+    for (int blockIdx_x = blockIdx.x; blockIdx_x < blocks_x_total; blockIdx_x += gridDim.x) {
+    )JIT";
+    static const char *loopEnd = "}\n\n";
+
+    static const char *blockStart = "{\n\n";
+    static const char *blockEnd = "\n\n}";
+
+    static const char *linearIndex = R"JIT(
+        uint threadId = threadIdx.x;
+        int idx = blockIdx_x * blockDim.x * blockDim.y + threadId;
+        if (idx >= outref.dims[3] * outref.strides[3]) return;
+        )JIT";
+
+    static const char *generalIndex = R"JIT(
+        uint id0 = 0, id1 = 0, id2 = 0, id3 = 0;
+        long blockIdx_y = blockIdx.z * gridDim.y + blockIdx.y;
+        if (num_odims > 2) {
+            id2 = blockIdx_x / blocks_x;
+            id0 = blockIdx_x - id2 * blocks_x;
+            id0 = threadIdx.x + id0 * blockDim.x;
+            if (num_odims > 3) {
+                id3 = blockIdx_y / blocks_y;
+                id1 = blockIdx_y - id3 * blocks_y;
+                id1 = threadIdx.y + id1 * blockDim.y;
+            } else {
+                id1 = threadIdx.y + blockDim.y * blockIdx_y;
+            }
+        } else {
+            id3 = 0;
+            id2 = 0;
+            id1 = threadIdx.y + blockDim.y * blockIdx_y;
+            id0 = threadIdx.x + blockDim.x * blockIdx_x;
+        }
+
+        bool cond = id0 < outref.dims[0] &&
+                    id1 < outref.dims[1] &&
+                    id2 < outref.dims[2] &&
+                    id3 < outref.dims[3];
+        if (!cond) return;
+
+        int idx = outref.strides[3] * id3 +
+                  outref.strides[2] * id2 +
+                  outref.strides[1] * id1 + id0;
+        )JIT";
+
+    stringstream inParamStream;
+    stringstream outParamStream;
+    stringstream outWriteStream;
+    stringstream offsetsStream;
+    stringstream opsStream;
+    stringstream outrefstream;
+
+    for (int i = 0; i < (int)full_nodes.size(); i++) {
+        const auto &node = full_nodes[i];
+        const auto &ids_curr = full_ids[i];
+        // Generate input parameters, only needs current id
+        node->genParams(inParamStream, ids_curr.id, is_linear);
+        // Generate input offsets, only needs current id
+        node->genOffsets(offsetsStream, ids_curr.id, is_linear);
+        // Generate the core function body, needs children ids as well
+        node->genFuncs(opsStream, ids_curr);
+    }
+
+    outrefstream << "Param<" << full_nodes[output_ids[0]]->getTypeStr()
+                 << "> outref = out" << output_ids[0] << ";\n";
+
+    for (int i = 0; i < (int)output_ids.size(); i++) {
+        int id = output_ids[i];
+        // Generate output parameters
+        outParamStream << "Param<" << full_nodes[id]->getTypeStr() << "> out" << id << ", \n";
+        // Generate code to write the output
+        outWriteStream << "out" << id << ".ptr[idx] = val" << id << ";\n";
+    }
+
+    // Put various blocks into a single stream
     stringstream kerStream;
-    stringstream annStream;
-    str_map_t declStrs;
-
-    int id = node->getId();
-
-    if (sizeof(void *) == 8) {
-        kerStream << layout64;
-        kerStream << triple64;
+    kerStream << typedefStr;
+    kerStream << includeFileStr << "\n\n";
+    kerStream << paramTStr << "\n";
+    kerStream << kernelVoid;
+    kerStream << funcName;
+    kerStream << "(\n";
+    kerStream << inParamStream.str();
+    kerStream << outParamStream.str();
+    kerStream << dimParams;
+    kerStream << ")\n";
+    kerStream << blockStart;
+    kerStream << outrefstream.str();
+    kerStream << loopStart;
+    if (is_linear) {
+        kerStream << linearIndex;
     } else {
-        kerStream << layout32;
-        kerStream << triple32;
+        kerStream << generalIndex;
     }
-
-    kerStream << "define void " << funcName << " (" << std::endl;
-    node->genParams(kerStream, annStream, is_linear);
-    kerStream << node->getTypeStr() <<"* %out,\n"
-              << "i32 %ostr0, i32 %ostr1, i32 %ostr2, i32 %ostr3,\n"
-              << "i32 %odim0, i32 %odim1, i32 %odim2, i32 %odim3,\n"
-              << "i32 %blkx, i32 %blky) {"
-              << "\n\n";
-
-    kerStream << "entry:\n\n";
-    kerStream << "%tidx = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()\n";
-    kerStream << "%bdmx = call i32 @llvm.nvvm.read.ptx.sreg.ntid.x()\n";
-    kerStream << "%bidx = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()\n";
-    kerStream << "%bidy = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.y()\n";
-    kerStream << "%gdmx = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.x()\n";
-    kerStream << "\n\n";
-
-    if (!is_linear) {
-
-        kerStream << "%tidy = call i32 @llvm.nvvm.read.ptx.sreg.tid.y()\n";
-        kerStream << "%bdmy = call i32 @llvm.nvvm.read.ptx.sreg.ntid.y()\n";
-
-        kerStream << "%id2 = sdiv i32 %bidx, %blkx\n";
-        kerStream << "%id3 = sdiv i32 %bidy, %blky\n";
-        kerStream << "%id2m = mul i32 %id2, %blkx\n";
-        kerStream << "%id3m = mul i32 %id3, %blky\n";
-        kerStream << "%blk_x = sub i32 %bidx, %id2m\n";
-        kerStream << "%blk_y = sub i32 %bidy, %id3m\n";
-        kerStream << "%id0m = mul i32 %blk_x, %bdmx\n";
-        kerStream << "%id1m = mul i32 %blk_y, %bdmy\n";
-        kerStream << "%id0 = add i32 %tidx, %id0m\n";
-        kerStream << "%id1 = add i32 %tidy, %id1m\n";
-        kerStream << "\n\n";
-
-        kerStream << "%off3o = mul i32 %id3, %ostr3\n";
-        kerStream << "%off2o = mul i32 %id2, %ostr2\n";
-        kerStream << "%off1o = mul i32 %id1, %ostr1\n";
-        kerStream << "%off23o = add i32 %off3o, %off2o\n";
-        kerStream << "%off123o = add i32 %off23o, %off1o\n";
-        kerStream << "%idxa = add i32 %off123o, %id0\n";
-        kerStream << "%idx = sext i32 %idxa to i64\n";
-        kerStream << "\n\n";
-
-        kerStream << "%cmp3 = icmp slt i32 %id3, %odim3\n";
-        kerStream << "%cmp2 = icmp slt i32 %id2, %odim2\n";
-        kerStream << "%cmp1 = icmp slt i32 %id1, %odim1\n";
-        kerStream << "%cmp0 = icmp slt i32 %id0, %odim0\n";
-
-        kerStream << "br i1 %cmp3, label %check2, label %end\n";
-        kerStream << "\ncheck2:\n";
-        kerStream << "br i1 %cmp2, label %check1, label %end\n";
-        kerStream << "\ncheck1:\n";
-        kerStream << "br i1 %cmp1, label %check0, label %end\n";
-        kerStream << "\ncheck0:\n";
-        kerStream << "br i1 %cmp0, label %core, label %end\n";
-
-    } else {
-
-        kerStream << "%boff = mul i32 %bidy, %gdmx\n";
-        kerStream << "%bid  = add i32 %boff, %bidx\n";
-        kerStream << "%goff = mul i32 %bid , %bdmx\n";
-        kerStream << "%gid  = add i32 %goff ,%tidx\n";
-        kerStream << "%idx  = sext i32 %gid to i64\n";
-        kerStream << "%el1  = mul i32 %odim0, %odim1\n";
-        kerStream << "%el2  = mul i32 %el1  , %odim2\n";
-        kerStream << "%el3  = mul i32 %el2  , %odim3\n";
-        kerStream << "%cmp0 = icmp slt i32 %gid, %el3\n";
-        kerStream << "br i1 %cmp0, label %core, label %end\n";
-    }
-
-    kerStream << "\n";
-    kerStream << "end:\n\n";
-    kerStream << "ret void\n";
-
-    kerStream <<"\n";
-    kerStream << "core:\n\n";
-    node->genOffsets(kerStream, is_linear);
-
-    node->genFuncs(kerStream, declStrs, is_linear);
-
-    kerStream << "%outIdx = getelementptr inbounds " << node->getTypeStr() << "* %out, i64 %idx\n";
-    kerStream << "store "
-              << node->getTypeStr()
-              << " %val" << id << ", "
-              << node->getTypeStr()
-              << "* %outIdx\n";
-
-    kerStream << "\nret void\n";
-    kerStream << "\n}\n\n";
-
-    for(str_map_iter iterator = declStrs.begin(); iterator != declStrs.end(); iterator++) {
-        kerStream << iterator->first << "\n";
-    }
-
-    kerStream
-        << "declare i32 @llvm.nvvm.read.ptx.sreg.tid.x() nounwind readnone\n"
-        << "declare i32 @llvm.nvvm.read.ptx.sreg.tid.y() nounwind readnone\n"
-        << "declare i32 @llvm.nvvm.read.ptx.sreg.ntid.x() nounwind readnone\n"
-        << "declare i32 @llvm.nvvm.read.ptx.sreg.ntid.y() nounwind readnone\n"
-        << "declare i32 @llvm.nvvm.read.ptx.sreg.ctaid.x() nounwind readnone\n"
-        << "declare i32 @llvm.nvvm.read.ptx.sreg.ctaid.y() nounwind readnone\n"
-        << "declare i32 @llvm.nvvm.read.ptx.sreg.nctaid.x() nounwind readnone\n";
-
-    kerStream << "\n";
-
-    kerStream << "!nvvm.annotations = !{!1}\n"
-              << "!1 = metadata !{void (\n"
-              << annStream.str()
-              << node->getTypeStr() << "*,\n"
-              << "i32, i32, i32, i32,\n"
-              << "i32, i32, i32, i32,\n"
-              << "i32, i32\n"
-              << ")* " << funcName << ",\n "
-              << "metadata !\"kernel\", i32 1}\n";
+    kerStream << offsetsStream.str();
+    kerStream << opsStream.str();
+    kerStream << outWriteStream.str();
+    kerStream << loopEnd;
+    kerStream << blockEnd;
 
     return kerStream.str();
-}
-
-#define NVVM_CHECK(fn, msg) do {                \
-        nvvmResult res = fn;                    \
-        if (res == NVVM_SUCCESS) break;         \
-        char nvvm_err_msg[1024];                \
-        snprintf(nvvm_err_msg,					\
-                 sizeof(nvvm_err_msg),          \
-                 "NVVM Error (%d): %s\n",       \
-                 (int)(res), msg);              \
-        AF_ERROR(nvvm_err_msg,                  \
-                 AF_ERR_INTERNAL);              \
-                                                \
-    } while(0)
-
-static char *irToPtx(string IR, size_t *ptx_size)
-{
-    nvvmProgram prog;
-
-    NVVM_CHECK(nvvmCreateProgram(&prog), "Failed to create program");
-
-    NVVM_CHECK(nvvmAddModuleToProgram(prog, IR.c_str(), IR.size(), "generated kernel"),
-               "Failed to add module");
-
-//#ifdef NDEBUG
-#if 0
-    NVVM_CHECK(nvvmCompileProgram(prog, 0, NULL), "Failed to compile program");
-#else
-    nvvmResult comp_res = nvvmCompileProgram(prog, 0, NULL);
-    if (comp_res != NVVM_SUCCESS) {
-        size_t log_size = 0;
-        nvvmGetProgramLogSize(prog, &log_size);
-        printf("%ld, %ld\n", IR.size(), log_size);
-        char *log = new char[log_size];
-        nvvmGetProgramLog(prog, log);
-        printf("LOG:\n%s\n%s", log, IR.c_str());
-        delete[] log;
-        NVVM_CHECK(comp_res, "Failed to compile program");
-    }
-#endif
-
-    NVVM_CHECK(nvvmGetCompiledResultSize(prog, ptx_size), "Can not get ptx size");
-
-    char *ptx = new char[*ptx_size];
-    NVVM_CHECK(nvvmGetCompiledResult(prog, ptx), "Can not get ptx from NVVM IR");
-
-    NVVM_CHECK(nvvmDestroyProgram(&prog), "Failed to destroy program");
-    return ptx;
 }
 
 typedef struct {
@@ -250,13 +212,20 @@ typedef struct {
     CUfunction ker;
 } kc_entry_t;
 
-
-const size_t size = 1024;
-char linkInfo[size];
-char linkError[size];
+#define CU_CHECK(fn) do {                       \
+        CUresult res = fn;                      \
+        if (res == CUDA_SUCCESS) break;         \
+        char cu_err_msg[1024];                  \
+        snprintf(cu_err_msg,                    \
+                 sizeof(cu_err_msg),            \
+                 "CU Error (%d)\n",             \
+                 (int)(res));                   \
+        AF_ERROR(cu_err_msg,                    \
+                 AF_ERR_INTERNAL);              \
+    } while(0)
 
 #ifndef NDEBUG
-#define CU_CHECK(fn) do {                       \
+#define CU_LINK_CHECK(fn) do {                  \
         CUresult res = fn;                      \
         if (res == CUDA_SUCCESS) break;         \
         char cu_err_msg[1024];                  \
@@ -268,29 +237,76 @@ char linkError[size];
                  AF_ERR_INTERNAL);              \
     } while(0)
 #else
-#define CU_CHECK(fn) do {                       \
-        CUresult res = fn;                      \
-        if (res == CUDA_SUCCESS) break;         \
-        char cu_err_msg[1024];                  \
-        snprintf(cu_err_msg,					\
-                 sizeof(cu_err_msg),            \
-                 "CU Error (%d)\n",             \
-                 (int)(res));                   \
-        AF_ERROR(cu_err_msg,                    \
-                 AF_ERR_INTERNAL);              \
+#define CU_LINK_CHECK(fn) CU_CHECK(fn)
+#endif
+
+#ifndef NDEBUG
+#define NVRTC_CHECK(fn) do {                            \
+        nvrtcResult res = fn;                           \
+        if (res == NVRTC_SUCCESS) break;                \
+        size_t logSize;                                 \
+        nvrtcGetProgramLogSize(prog, &logSize);         \
+        unique_ptr<char []> log(new char[logSize +1]);  \
+        char *logptr = log.get();                       \
+        nvrtcGetProgramLog(prog, logptr);               \
+        logptr[logSize] = '\x0';                        \
+        printf("%s\n", logptr);                         \
+        AF_ERROR("NVRTC ERROR",                         \
+                 AF_ERR_INTERNAL);                      \
+    } while(0)
+#else
+#define NVRTC_CHECK(fn) do {                        \
+        nvrtcResult res = fn;                       \
+        if (res == NVRTC_SUCCESS) break;            \
+        char nvrtc_err_msg[1024];                   \
+        snprintf(nvrtc_err_msg,                     \
+                 sizeof(nvrtc_err_msg),             \
+                 "NVRTC Error(%d): %s\n",           \
+                 res, nvrtcGetErrorString(res));    \
+        AF_ERROR(nvrtc_err_msg,                     \
+                 AF_ERR_INTERNAL);                  \
     } while(0)
 #endif
 
+std::vector<char> compileToPTX(const char *ker_name, string jit_ker)
+{
+    nvrtcProgram prog;
+    size_t ptx_size;
+    std::vector<char> ptx;
+    NVRTC_CHECK(nvrtcCreateProgram(&prog, jit_ker.c_str(),
+                                   ker_name, 0, NULL, NULL));
+
+    auto dev = getDeviceProp(getActiveDeviceId());
+    array<char, 32> arch;
+    snprintf(arch.data(), arch.size(), "--gpu-architecture=compute_%d%d",
+             dev.major, dev.minor);
+    const char* compiler_options[] = {
+      arch.data(),
+#ifndef NDEBUG
+      "--device-debug",
+      "--generate-line-info"
+#endif
+    };
+    int num_options = std::extent<decltype(compiler_options)>::value;
+    NVRTC_CHECK(nvrtcCompileProgram(prog, num_options, compiler_options));
+
+    NVRTC_CHECK(nvrtcGetPTXSize(prog, &ptx_size));
+    ptx.resize(ptx_size);
+    NVRTC_CHECK(nvrtcGetPTX(prog, ptx.data()));
+    return ptx;
+}
+
 static kc_entry_t compileKernel(const char *ker_name, string jit_ker)
 {
-    size_t ptx_size;
-    const char *ptx = irToPtx(jit_ker, &ptx_size);
+    lock_guard<recursive_mutex> lock(getDriverApiMutex(getActiveDeviceId()));
+
+    const size_t linkLogSize = 1024;
+    char linkInfo[linkLogSize] = {0};
+    char linkError[linkLogSize] = {0};
+
+    auto ptx = compileToPTX(ker_name, jit_ker);
 
     CUlinkState linkState;
-
-    linkInfo[0] = 0;
-    linkError[0] = 0;
-
     CUjit_option linkOptions[] = {
         CU_JIT_INFO_LOG_BUFFER,
         CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
@@ -301,67 +317,46 @@ static kc_entry_t compileKernel(const char *ker_name, string jit_ker)
 
     void *linkOptionValues[] = {
         linkInfo,
-        reinterpret_cast<void*>(1024),
+        reinterpret_cast<void*>(linkLogSize),
         linkError,
-        reinterpret_cast<void*>(1024),
+        reinterpret_cast<void*>(linkLogSize),
         reinterpret_cast<void*>(1)
     };
 
-    CU_CHECK(cuLinkCreate(5, linkOptions, linkOptionValues, &linkState));
-    CU_CHECK(cuLinkAddData(linkState, CU_JIT_INPUT_PTX, (void*)ptx,
-                           ptx_size, ker_name, 0, NULL, NULL));
-
-    CU_CHECK(cuLinkAddData(linkState, CU_JIT_INPUT_PTX, (void*)arith_ptx,
-                           arith_ptx_len, "arith", 0, NULL, NULL));
-
-    CU_CHECK(cuLinkAddData(linkState, CU_JIT_INPUT_PTX, (void*)cast_ptx,
-                           cast_ptx_len, "cast", 0, NULL, NULL));
-
-    CU_CHECK(cuLinkAddData(linkState, CU_JIT_INPUT_PTX, (void*)exp_ptx,
-                           exp_ptx_len, "exp", 0, NULL, NULL));
-
-    CU_CHECK(cuLinkAddData(linkState, CU_JIT_INPUT_PTX, (void*)hyper_ptx,
-                           hyper_ptx_len, "hyper", 0, NULL, NULL));
-
-    CU_CHECK(cuLinkAddData(linkState, CU_JIT_INPUT_PTX, (void*)logic_ptx,
-                           logic_ptx_len, "logic", 0, NULL, NULL));
-
-    CU_CHECK(cuLinkAddData(linkState, CU_JIT_INPUT_PTX, (void*)numeric_ptx,
-                           numeric_ptx_len, "numeric", 0, NULL, NULL));
-
-    CU_CHECK(cuLinkAddData(linkState, CU_JIT_INPUT_PTX, (void*)trig_ptx,
-                           trig_ptx_len, "trig", 0, NULL, NULL));
+    CU_LINK_CHECK(cuLinkCreate(5, linkOptions, linkOptionValues, &linkState));
+    CU_LINK_CHECK(cuLinkAddData(linkState, CU_JIT_INPUT_PTX, (void*)ptx.data(),
+                                ptx.size(), ker_name, 0, NULL, NULL));
 
     void *cubin;
     size_t cubinSize;
 
     CUmodule module;
     CUfunction kernel;
-
-    CU_CHECK(cuLinkComplete(linkState, &cubin, &cubinSize));
+    CU_LINK_CHECK(cuLinkComplete(linkState, &cubin, &cubinSize));
     CU_CHECK(cuModuleLoadDataEx(&module, cubin, 0, 0, 0));
-    CU_CHECK(cuModuleGetFunction(&kernel, module, ker_name + 1));
-
+    CU_CHECK(cuModuleGetFunction(&kernel, module, ker_name));
     kc_entry_t entry = {module, kernel};
-
-    delete[] ptx;
     return entry;
 }
 
-static CUfunction getKernel(Node *node, bool is_linear)
+static CUfunction getKernel(const vector<Node *> &output_nodes,
+                            const vector<int> &output_ids,
+                            const vector<Node *> &full_nodes,
+                            const vector<Node_ids> &full_ids,
+                            const bool is_linear)
 {
+    typedef map<string, kc_entry_t> kc_t;
 
-    string funcName = getFuncName(node, is_linear);
+    thread_local kc_t kernelCaches[DeviceManager::MAX_DEVICES];
 
-    typedef std::map<string, kc_entry_t> kc_t;
-    static kc_t kernelCaches[DeviceManager::MAX_DEVICES];
-    int device = getActiveDeviceId();
+    string funcName = getFuncName(output_nodes, full_nodes, full_ids, is_linear);
+    int device      = getActiveDeviceId();
 
     kc_t::iterator idx = kernelCaches[device].find(funcName);
     kc_entry_t entry = {NULL, NULL};
 
     if (idx == kernelCaches[device].end()) {
-        string jit_ker = getKernelString(funcName, node, is_linear);
+        string jit_ker = getKernelString(funcName, full_nodes, full_ids, output_ids, is_linear);
         entry = compileKernel(funcName.c_str(), jit_ker);
         kernelCaches[device][funcName] = entry;
     } else {
@@ -372,86 +367,143 @@ static CUfunction getKernel(Node *node, bool is_linear)
 }
 
 template<typename T>
-void evalNodes(Param<T> &out, Node *node)
+void evalNodes(vector<Param<T>>& outputs, vector<Node *> output_nodes)
 {
-    bool is_linear = node->isLinear(out.dims);
-    CUfunction ker = getKernel(node, is_linear);
-    std::vector<void *> args;
-    node->setArgs(args, is_linear);
+    int num_outputs = (int)outputs.size();
 
-    void *ptr = (void *)out.ptr;
-    int strides[] = {(int)out.strides[0],
-                     (int)out.strides[1],
-                     (int)out.strides[2],
-                     (int)out.strides[3]};
+    if (num_outputs == 0) return;
 
-    int dims[] = {(int)out.dims[0],
-                  (int)out.dims[1],
-                  (int)out.dims[2],
-                  (int)out.dims[3]};
+    Node_map_t nodes;
+    vector<Node *> full_nodes;
+    vector<Node_ids> full_ids;
+    vector<int> output_ids;
 
-    args.push_back((void *)&ptr);
-    for (int i = 0; i < 4; i++) args.push_back((void *)(strides + i));
-    for (int i = 0; i < 4; i++) args.push_back((void *)(dims + i));
+    // Reserve some space to improve performance at smaller sizes
+    output_ids.reserve(output_nodes.size());
+    full_nodes.reserve(1024);
+    full_ids.reserve(1024);
+
+    for (auto &node : output_nodes) {
+        int id = node->getNodesMap(nodes, full_nodes, full_ids);
+        output_ids.push_back(id);
+    }
+
+    bool is_linear = true;
+    for (auto node : full_nodes) {
+        is_linear &= node->isLinear(outputs[0].dims);
+    }
+
+    CUfunction ker = getKernel(output_nodes, output_ids,
+                               full_nodes, full_ids,
+                               is_linear);
 
     int threads_x = 1, threads_y = 1;
     int blocks_x_ = 1, blocks_y_ = 1;
-    int blocks_x  = 1, blocks_y = 1;
+    int blocks_x  = 1, blocks_y = 1, blocks_z = 1, blocks_x_total;
+    const int max_blocks = 65535;
+
+    int num_odims = 4;
+
+    while (num_odims >= 1) {
+        if (outputs[0].dims[num_odims - 1] == 1) num_odims--;
+        else break;
+    }
 
     if (is_linear) {
 
         threads_x = 256;
         threads_y =  1;
 
-        int blocks = divup((out.dims[0] *
-                            out.dims[1] *
-                            out.dims[2] *
-                            out.dims[3]), threads_x);
+        blocks_x_total = divup((outputs[0].dims[0] *
+                                outputs[0].dims[1] *
+                                outputs[0].dims[2] *
+                                outputs[0].dims[3]), threads_x);
 
-        blocks_y_ = divup(blocks, 65535);
-        blocks_x_ = divup(blocks, blocks_y_);
-
-        blocks_x = blocks_x_;
-        blocks_y = blocks_y_;
-
+        int repeat_x = divup(blocks_x_total, max_blocks);
+        blocks_x = divup(blocks_x_total, repeat_x);
     } else {
 
         threads_x = 32;
         threads_y =  8;
 
-        blocks_x_ = divup(out.dims[0], threads_x);
-        blocks_y_ = divup(out.dims[1], threads_y);
+        blocks_x_ = divup(outputs[0].dims[0], threads_x);
+        blocks_y_ = divup(outputs[0].dims[1], threads_y);
 
-        blocks_x = blocks_x_ * out.dims[2];
-        blocks_y = blocks_y_ * out.dims[3];
+        blocks_x = blocks_x_ * outputs[0].dims[2];
+        blocks_y = blocks_y_ * outputs[0].dims[3];
+
+        blocks_z = divup(blocks_y, max_blocks);
+        blocks_y = divup(blocks_y, blocks_z);
+
+        blocks_x_total = blocks_x;
+        int repeat_x = divup(blocks_x_total, max_blocks);
+        blocks_x = divup(blocks_x_total, repeat_x);
+    }
+
+    vector<void *> args;
+
+    for (const auto &node : full_nodes) {
+        node->setArgs(args, is_linear);
+    }
+
+    for (int i = 0; i < num_outputs; i++) {
+        args.push_back((void *)&outputs[i]);
     }
 
     args.push_back((void *)&blocks_x_);
     args.push_back((void *)&blocks_y_);
+    args.push_back((void *)&blocks_x_total);
+    args.push_back((void *)&num_odims);
 
+    lock_guard<recursive_mutex> lock(getDriverApiMutex(getActiveDeviceId()));
     CU_CHECK(cuLaunchKernel(ker,
                             blocks_x,
                             blocks_y,
-                            1,
+                            blocks_z,
                             threads_x,
                             threads_y,
                             1,
                             0,
-                            NULL,
+                            getActiveStream(),
                             &args.front(),
                             NULL));
 }
 
-template void evalNodes<float  >(Param<float  > &out, Node *node);
-template void evalNodes<double >(Param<double > &out, Node *node);
-template void evalNodes<cfloat >(Param<cfloat > &out, Node *node);
-template void evalNodes<cdouble>(Param<cdouble> &out, Node *node);
-template void evalNodes<int    >(Param<int    > &out, Node *node);
-template void evalNodes<uint   >(Param<uint   > &out, Node *node);
-template void evalNodes<char   >(Param<char   > &out, Node *node);
-template void evalNodes<uchar  >(Param<uchar  > &out, Node *node);
-template void evalNodes<intl   >(Param<intl   > &out, Node *node);
-template void evalNodes<uintl  >(Param<uintl  > &out, Node *node);
+template<typename T>
+void evalNodes(Param<T> out, Node *node)
+{
+    vector<Param<T>> outputs;
+    vector<Node *> output_nodes;
 
+    outputs.push_back(out);
+    output_nodes.push_back(node);
+    evalNodes(outputs, output_nodes);
+    return;
+}
 
+template void evalNodes<float  >(Param<float  > out, Node *node);
+template void evalNodes<double >(Param<double > out, Node *node);
+template void evalNodes<cfloat >(Param<cfloat > out, Node *node);
+template void evalNodes<cdouble>(Param<cdouble> out, Node *node);
+template void evalNodes<int    >(Param<int    > out, Node *node);
+template void evalNodes<uint   >(Param<uint   > out, Node *node);
+template void evalNodes<char   >(Param<char   > out, Node *node);
+template void evalNodes<uchar  >(Param<uchar  > out, Node *node);
+template void evalNodes<intl   >(Param<intl   > out, Node *node);
+template void evalNodes<uintl  >(Param<uintl  > out, Node *node);
+template void evalNodes<short  >(Param<short  > out, Node *node);
+template void evalNodes<ushort >(Param<ushort > out, Node *node);
+
+template void evalNodes<float  >(vector<Param<float  > > &out, vector<Node *> node);
+template void evalNodes<double >(vector<Param<double > > &out, vector<Node *> node);
+template void evalNodes<cfloat >(vector<Param<cfloat > > &out, vector<Node *> node);
+template void evalNodes<cdouble>(vector<Param<cdouble> > &out, vector<Node *> node);
+template void evalNodes<int    >(vector<Param<int    > > &out, vector<Node *> node);
+template void evalNodes<uint   >(vector<Param<uint   > > &out, vector<Node *> node);
+template void evalNodes<char   >(vector<Param<char   > > &out, vector<Node *> node);
+template void evalNodes<uchar  >(vector<Param<uchar  > > &out, vector<Node *> node);
+template void evalNodes<intl   >(vector<Param<intl   > > &out, vector<Node *> node);
+template void evalNodes<uintl  >(vector<Param<uintl  > > &out, vector<Node *> node);
+template void evalNodes<short  >(vector<Param<short  > > &out, vector<Node *> node);
+template void evalNodes<ushort >(vector<Param<ushort > > &out, vector<Node *> node);
 }

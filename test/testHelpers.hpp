@@ -6,6 +6,9 @@
  * The complete license agreement can be obtained at:
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
+#pragma once
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 
 #include <string>
 #include <fstream>
@@ -13,11 +16,30 @@
 #include <vector>
 #include <algorithm>
 #include <limits>
+#include <stdexcept>
+#include <cfloat>
 #include <arrayfire.h>
 #include <af/dim4.hpp>
+#include <af/array.h>
 
-typedef unsigned char uchar;
-typedef unsigned int uint;
+typedef unsigned char  uchar;
+typedef unsigned int   uint;
+typedef unsigned short ushort;
+
+std::string readNextNonEmptyLine(std::ifstream &file)
+{
+    std::string result = "";
+    // Using a for loop to read the next non empty line
+    for (std::string line; std::getline(file, line);) {
+        result += line;
+        if (result != "") break;
+    }
+    // If no file has been found, throw an exception
+    if (result == "") {
+        throw std::runtime_error("Non empty lines not found in the file");
+    }
+    return result;
+}
 
 template<typename inType, typename outType, typename FileElementType>
 void readTests(const std::string &FileName, std::vector<af::dim4> &inputDims,
@@ -52,7 +74,7 @@ void readTests(const std::string &FileName, std::vector<af::dim4> &inputDims,
             FileElementType tmp;
             for(unsigned i = 0; i < nElems; i++) {
                 testFile >> tmp;
-                testInputs[k][i] = tmp;
+                testInputs[k][i] = static_cast<inType>(tmp);
             }
         }
 
@@ -62,7 +84,7 @@ void readTests(const std::string &FileName, std::vector<af::dim4> &inputDims,
             FileElementType tmp;
             for(unsigned j = 0; j < testSizes[i]; j++) {
                 testFile >> tmp;
-                testOutputs[i][j] = tmp;
+                testOutputs[i][j] = static_cast<outType>(tmp);
             }
         }
     }
@@ -123,11 +145,11 @@ void readTestsFromFile(const std::string &FileName, std::vector<af::dim4> &input
     }
 }
 
-void readImageTests(const std::string        &pFileName,
-                    std::vector<af::dim4>    &pInputDims,
-                    std::vector<std::string> &pTestInputs,
-                    std::vector<dim_type>    &pTestOutSizes,
-                    std::vector<std::string> &pTestOutputs)
+inline void readImageTests(const std::string        &pFileName,
+                           std::vector<af::dim4>    &pInputDims,
+                           std::vector<std::string> &pTestInputs,
+                           std::vector<dim_t>    &pTestOutSizes,
+                           std::vector<std::string> &pTestOutputs)
 {
     using std::vector;
 
@@ -152,26 +174,12 @@ void readImageTests(const std::string        &pFileName,
 
         pTestInputs.resize(inputCount, "");
         for(unsigned k=0; k<inputCount; k++) {
-            std::string temp = "";
-            while(std::getline(testFile, temp)) {
-                if (temp!="")
-                    break;
-            }
-            if (temp=="")
-                throw std::runtime_error("Test file might not be per format, please check.");
-            pTestInputs[k] = temp;
+            pTestInputs[k] = readNextNonEmptyLine(testFile);
         }
 
         pTestOutputs.resize(testCount, "");
         for(unsigned i = 0; i < testCount; i++) {
-            std::string temp = "";
-            while(std::getline(testFile, temp)) {
-                if (temp!="")
-                    break;
-            }
-            if (temp=="")
-                throw std::runtime_error("Test file might not be per format, please check.");
-            pTestOutputs[i] = temp;
+            pTestOutputs[i] = readNextNonEmptyLine(testFile);
         }
     }
     else {
@@ -208,14 +216,7 @@ void readImageTests(const std::string                 &pFileName,
 
         pTestInputs.resize(inputCount, "");
         for(unsigned k=0; k<inputCount; k++) {
-            std::string temp = "";
-            while(std::getline(testFile, temp)) {
-                if (temp!="")
-                    break;
-            }
-            if (temp=="")
-                throw std::runtime_error("Test file might not be per format, please check.");
-            pTestInputs[k] = temp;
+            pTestInputs[k] = readNextNonEmptyLine(testFile);
         }
 
         pTestOutputs.resize(testCount, vector<outType>(0));
@@ -260,14 +261,7 @@ void readImageFeaturesDescriptors(const std::string                  &pFileName,
 
         pTestInputs.resize(inputCount, "");
         for(unsigned k=0; k<inputCount; k++) {
-            std::string temp = "";
-            while(std::getline(testFile, temp)) {
-                if (temp!="")
-                    break;
-            }
-            if (temp=="")
-                throw std::runtime_error("Test file might not be per format, please check.");
-            pTestInputs[k] = temp;
+            pTestInputs[k] = readNextNonEmptyLine(testFile);
         }
 
         pTestFeats.resize(attrCount, vector<float>(0));
@@ -310,27 +304,27 @@ void readImageFeaturesDescriptors(const std::string                  &pFileName,
  * value of NRMSD. Hence, the range of RMSD is [0,255] for image inputs.
  */
 template<typename T>
-bool compareArraysRMSD(dim_type data_size, T *gold, T *data, double tolerance)
+bool compareArraysRMSD(dim_t data_size, T *gold, T *data, double tolerance)
 {
     double accum  = 0.0;
-    double maxion = FLT_MAX;//(double)std::numeric_limits<T>::lowest();
+    double maxion = -FLT_MAX;//(double)std::numeric_limits<T>::lowest();
     double minion = FLT_MAX;//(double)std::numeric_limits<T>::max();
 
-    for(dim_type i=0;i<data_size;i++)
+    for(dim_t i=0;i<data_size;i++)
     {
         double dTemp = (double)data[i];
         double gTemp = (double)gold[i];
         double diff  = gTemp-dTemp;
-        double err   = std::abs(diff) > 1.0e-4 ? diff : 0.0f;
-        accum  += std::pow(err,2.0);
+        double err   = (std::isfinite(diff) && (std::abs(diff) > 1.0e-4)) ? diff : 0.0f;
+        accum  += std::pow(err, 2.0);
         maxion  = std::max(maxion, dTemp);
         minion  = std::min(minion, dTemp);
     }
-    accum      /= data_size;
+    accum /= data_size;
     double NRMSD = std::sqrt(accum)/(maxion-minion);
 
     std::cout<<"NRMSD = "<<NRMSD<<std::endl;
-    if (NRMSD > tolerance)
+    if (std::isnan(NRMSD) || NRMSD > tolerance)
         return false;
 
     return true;
@@ -360,35 +354,113 @@ struct cond_type<false, T, Other> {
 };
 
 template<typename T>
-double real(T val) { return val.real(); }
+inline double real(T val) { return (double)val; }
 template<>
-double real<double>(double val) { return val; }
+inline double real<af::cdouble>(af::cdouble val) { return real(val); }
 template<>
-double real<float>(float val) { return val; }
-template<>
-double real<int>(int val) { return val; }
-template<>
-double real<uint>(uint val) { return val; }
+inline double real<af::cfloat> (af::cfloat val) { return real(val); }
 
 template<typename T>
-double imag(T val) { return val.imag(); }
+inline double imag(T val) { return (double)val; }
 template<>
-double imag<double>(double val) { return 0; }
+inline double imag<af::cdouble>(af::cdouble val) { return imag(val); }
 template<>
-double imag<float>(float val) { return 0; }
-template<>
-double imag<int>(int val) { return 0; }
-template<>
-double imag<uint>(uint val) { return 0; }
+inline double imag<af::cfloat> (af::cfloat val) { return imag(val); }
 
 template<typename T>
 bool noDoubleTests()
 {
-    bool isTypeDouble = is_same_type<T, double>::value || is_same_type<T, af::cdouble>::value;
-
+    af::dtype ty = (af::dtype)af::dtype_traits<T>::af_type;
+    bool isTypeDouble = (ty == f64) || (ty == c64);
     int dev = af::getDevice();
     bool isDoubleSupported = af::isDoubleAvailable(dev);
 
     return ((isTypeDouble && !isDoubleSupported) ? true : false);
 }
 
+inline bool noImageIOTests()
+{
+    bool ret = !af::isImageIOAvailable();
+    if(ret) printf("Image IO Not Configured. Test will exit\n");
+    return ret;
+}
+
+inline bool noLAPACKTests()
+{
+    bool ret = !af::isLAPACKAvailable();
+    if(ret) printf("LAPACK Not Configured. Test will exit\n");
+    return ret;
+}
+
+// TODO: perform conversion on device for CUDA and OpenCL
+template<typename T>
+af_err conv_image(af_array *out, af_array in)
+{
+    af_array outArray;
+
+    dim_t d0, d1, d2, d3;
+    af_get_dims(&d0, &d1, &d2, &d3, in);
+    af::dim4 idims(d0, d1, d2, d3);
+
+    dim_t nElems = 0;
+    af_get_elements(&nElems, in);
+
+    float *in_data = new float[nElems];
+    af_get_data_ptr(in_data, in);
+
+    T *out_data = new T[nElems];
+
+    for (int i = 0; i < (int)nElems; i++)
+        out_data[i] = (T)in_data[i];
+
+    af_create_array(&outArray, out_data, idims.ndims(), idims.get(), (af_dtype) af::dtype_traits<T>::af_type);
+
+    std::swap(*out, outArray);
+
+    delete [] in_data;
+    delete [] out_data;
+
+    return AF_SUCCESS;
+}
+
+template<typename T>
+af::array cpu_randu(const af::dim4 dims)
+{
+    typedef typename af::dtype_traits<T>::base_type BT;
+
+    bool isTypeCplx = is_same_type<T, af::cfloat>::value || is_same_type<T, af::cdouble>::value;
+    bool isTypeFloat = is_same_type<BT, float>::value || is_same_type<BT, double>::value;
+
+    dim_t elements = (isTypeCplx ? 2 : 1) * dims.elements();
+
+    std::vector<BT> out(elements);
+    for(int i = 0; i < (int)elements; i++) {
+        out[i] = isTypeFloat ? (BT)(rand())/RAND_MAX : rand() % 100;
+    }
+
+    return af::array(dims, (T *)&out[0]);
+}
+
+void cleanSlate()
+{
+  const size_t step_bytes = 1024;
+
+  size_t alloc_bytes, alloc_buffers;
+  size_t lock_bytes, lock_buffers;
+
+  af::deviceGC();
+
+  af::deviceMemInfo(&alloc_bytes, &alloc_buffers,
+                    &lock_bytes, &lock_buffers);
+
+  ASSERT_EQ(0u, alloc_buffers);
+  ASSERT_EQ(0u, lock_buffers);
+  ASSERT_EQ(0u, alloc_bytes);
+  ASSERT_EQ(0u, lock_bytes);
+
+  af::setMemStepSize(step_bytes);
+
+  ASSERT_EQ(af::getMemStepSize(), step_bytes);
+}
+
+#pragma GCC diagnostic pop

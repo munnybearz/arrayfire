@@ -1,73 +1,60 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
-PROJECT(arrayfire-examples)
+cmake_minimum_required(VERSION 3.0)
+cmake_policy(VERSION 3.5)
+project(ArrayFire-Examples
+  VERSION 3.5.0
+  LANGUAGES CXX)
 
-# If the examples are not being built at the same time as ArrayFire,
-# we need to first find the ArrayFire library
-if(TARGET afcpu OR TARGET afcuda OR TARGET afopencl)
-    SET(ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../assets")
-    IF(NOT EXISTS "${ASSETS_DIR}/LICENSE")
-        MESSAGE(WARNING "Arrayfire assets are not available. Assets will not be installed.")
-        MESSAGE("Did you miss the --recursive option when cloning?")
-        MESSAGE("Run the following commands to correct this:")
-        MESSAGE("git submodule init")
-        MESSAGE("git submodule update")
-        MESSAGE("git submodule foreach git pull origin master")
-    ENDIF()
-else()
-    FIND_PACKAGE(ArrayFire REQUIRED)
-    INCLUDE_DIRECTORIES(${ArrayFire_INCLUDE_DIRS})
-
-    SET(ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+if(WIN32)
+  add_definitions(-DWIN32_LEAN_AND_MEAN)
+  unset(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
 endif()
 
-# A macro to build an ArrayFire example
-# For most uses only FIND_PACKAGE(ArrayFire REQUIRED), ADD_EXECUTABLE(...)
-# and TARGET_LINK_LIBRARIES(... ${ARRAYFIRE_LIBRARIES}) are needed
-MACRO(BUILD_EXAMPLE EXAMPLE_NAME EXAMPLE_SOURCE BACKEND_NAME BACKEND_LIBRARIES)
+# Some examples take too long to execute. This list is used to exclude these
+# examples from the tests
+list(APPEND exclude_from_tests  black_scholes_options_cpu
+                                monte_carlo_options_cpu
+                                vectorize_cpu
+                                )
 
-    ADD_EXECUTABLE(example_${EXAMPLE_NAME}_${BACKEND_NAME} ${EXAMPLE_SOURCE})
-    TARGET_LINK_LIBRARIES(example_${EXAMPLE_NAME}_${BACKEND_NAME}
-        ${BACKEND_LIBRARIES} )
-    SET_TARGET_PROPERTIES(example_${EXAMPLE_NAME}_${BACKEND_NAME}
-        PROPERTIES
-        OUTPUT_NAME ${EXAMPLE_NAME}_${BACKEND_NAME}
-        RUNTIME_OUTPUT_DIRECTORY ${DIR_NAME})
+# Overload add_executable and target_link_libraries so that we can use simple
+# CMakeLists.txt files for the examples.
+#
+# These functions will overload the existing functions so that the target names
+# have the word "examples_" prefixed to them so they don't conflict with the
+# tests. This is an issue with the blas example where the test blas_cpu and the
+# example blas_cpu have the same target name.
+#
+# Additionally, This will allow us to write the CMakeLists.txt files as
+# standalone files so that they are easier to parse for new users.
+function(add_executable target sources)
+  _add_executable(example_${target} ${sources})
+  set_target_properties(example_${target}
+    PROPERTIES
+      OUTPUT_NAME ${target}
+      FOLDER "Examples"
+	)
 
-ENDMACRO()
+  if(NOT ${target} IN_LIST exclude_from_tests)
+    #add_test(example_${target} ${target} 0 -)
+  endif()
+endfunction()
 
-# Collect the source
-FILE(GLOB FILES "*/*.cpp")
-ADD_DEFINITIONS("-DASSETS_DIR=\"${ASSETS_DIR}\"")
+function(target_link_libraries target sources)
+  _target_link_libraries(example_${target} ${sources})
+endfunction()
 
-FOREACH(FILE ${FILES})
-    GET_FILENAME_COMPONENT(EXAMPLE ${FILE} NAME_WE)
-    GET_FILENAME_COMPONENT(FULL_DIR_NAME ${FILE} PATH)
-    GET_FILENAME_COMPONENT(DIR_NAME ${FULL_DIR_NAME} NAME)
+function(target_compile_definitions target access definitions)
+  _target_compile_definitions(example_${target} ${access} ${definitions})
+endfunction()
 
-    # Next we build each example using every backend.
-    if(${ArrayFire_CPU_FOUND})  # variable defined by FIND(ArrayFire ...)
-        BUILD_EXAMPLE(${EXAMPLE} ${FILE} cpu ${ArrayFire_CPU_LIBRARIES})
-    elseif(TARGET afcpu)        # variable defined by the ArrayFire build tree
-        BUILD_EXAMPLE(${EXAMPLE} ${FILE} cpu afcpu)
-    endif()
-
-    if(${ArrayFire_CUDA_FOUND})  # variable defined by FIND(ArrayFire ...)
-        BUILD_EXAMPLE(${EXAMPLE} ${FILE} cuda ${ArrayFire_CUDA_LIBRARIES})
-    elseif(TARGET afcuda)        # variable defined by the ArrayFire build tree
-        BUILD_EXAMPLE(${EXAMPLE} ${FILE} cuda afcuda)
-    endif()
-
-    if(${ArrayFire_OPENCL_FOUND})  # variable defined by FIND(ArrayFire ...)
-        BUILD_EXAMPLE(${EXAMPLE} ${FILE} opencl ${ArrayFire_OPENCL_LIBRARIES})
-    elseif(TARGET afopencl)        # variable defined by the ArrayFire build tree
-        BUILD_EXAMPLE(${EXAMPLE} ${FILE} opencl afopencl)
-    endif()
-ENDFOREACH()
-
-INSTALL(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    DESTINATION share/doc/arrayfire/
-    COMPONENT examples)
-
-INSTALL(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../assets/examples"
-    DESTINATION share/doc/arrayfire/examples/assets/
-)
+add_subdirectory(benchmarks)
+add_subdirectory(computer_vision)
+add_subdirectory(financial)
+add_subdirectory(getting_started)
+add_subdirectory(graphics)
+add_subdirectory(helloworld)
+add_subdirectory(image_processing)
+add_subdirectory(lin_algebra)
+add_subdirectory(machine_learning)
+add_subdirectory(pde)
+add_subdirectory(unified)

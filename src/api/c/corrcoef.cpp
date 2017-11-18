@@ -10,7 +10,7 @@
 #include <af/dim4.hpp>
 #include <af/statistics.h>
 #include <af/defines.h>
-#include <err_common.hpp>
+#include <common/err_common.hpp>
 #include <backend.hpp>
 #include <handle.hpp>
 #include <reduce.hpp>
@@ -30,7 +30,7 @@ static To corrcoef(const af_array& X, const af_array& Y)
     Array<To> yIn = cast<To>(getArray<Ti>(Y));
 
     dim4 dims = xIn.dims();
-    dim_type n= xIn.elements();
+    dim_t n= xIn.elements();
 
     To xSum = detail::reduce_all<af_add_t, To, To>(xIn);
     To ySum = detail::reduce_all<af_add_t, To, To>(yIn);
@@ -51,8 +51,8 @@ static To corrcoef(const af_array& X, const af_array& Y)
 af_err af_corrcoef(double *realVal, double *imagVal, const af_array X, const af_array Y)
 {
     try {
-        ArrayInfo xInfo = getInfo(X);
-        ArrayInfo yInfo = getInfo(Y);
+        const ArrayInfo& xInfo = getInfo(X);
+        const ArrayInfo& yInfo = getInfo(Y);
         dim4 xDims      = xInfo.dims();
         dim4 yDims      = yInfo.dims();
         af_dtype xType  = xInfo.getType();
@@ -61,7 +61,7 @@ af_err af_corrcoef(double *realVal, double *imagVal, const af_array X, const af_
         ARG_ASSERT(2, (xType==yType));
         ARG_ASSERT(2, (xDims.ndims()==yDims.ndims()));
 
-        for (dim_type i=0; i<xDims.ndims(); ++i)
+        for (dim_t i=0; i<xDims.ndims(); ++i)
             ARG_ASSERT(2, (xDims[i]==yDims[i]));
 
         switch(xType) {
@@ -69,6 +69,10 @@ af_err af_corrcoef(double *realVal, double *imagVal, const af_array X, const af_
             case f32: *realVal = corrcoef<float , float >(X, Y); break;
             case s32: *realVal = corrcoef<int   , float >(X, Y); break;
             case u32: *realVal = corrcoef<uint  , float >(X, Y); break;
+            case s64: *realVal = corrcoef<intl  , double>(X, Y); break;
+            case u64: *realVal = corrcoef<uintl , double>(X, Y); break;
+            case s16: *realVal = corrcoef<short , float >(X, Y); break;
+            case u16: *realVal = corrcoef<ushort, float >(X, Y); break;
             case  u8: *realVal = corrcoef<uchar , float >(X, Y); break;
             case  b8: *realVal = corrcoef<char  , float >(X, Y); break;
             default : TYPE_ERROR(1, xType);

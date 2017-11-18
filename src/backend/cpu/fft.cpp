@@ -8,157 +8,78 @@
  ********************************************************/
 
 #include <af/dim4.hpp>
-#include <af/defines.h>
-#include <ArrayInfo.hpp>
 #include <Array.hpp>
 #include <fft.hpp>
-#include <err_cpu.hpp>
-#include <fftw3.h>
+#include <kernel/fft.hpp>
 #include <copy.hpp>
 #include <math.hpp>
+#include <platform.hpp>
+#include <queue.hpp>
 
 using af::dim4;
 
 namespace cpu
 {
 
-template<int rank>
-void computeDims(int *rdims, const dim4 &idims)
+void setFFTPlanCacheSize(size_t numPlans)
 {
-    if (rank==3) {
-        rdims[0] = idims[2];
-        rdims[1] = idims[1];
-        rdims[2] = idims[0];
-    } else if(rank==2) {
-        rdims[0] = idims[1];
-        rdims[1] = idims[0];
-    } else {
-        rdims[0] = idims[0];
-    }
 }
 
-#define TRANSFORM(FUNC, T, CAST_T, PREFIX, DIRECTION)               \
-    template<> void FUNC##w_common<T>(Array<T> &arr, int rank)      \
-    {                                                               \
-        int rank_dims[3];                                           \
-        const dim4 dims = arr.dims();                               \
-        switch(rank) {                                              \
-            case 1: computeDims<1>(rank_dims, dims); break;         \
-            case 2: computeDims<2>(rank_dims, dims); break;         \
-            case 3: computeDims<3>(rank_dims, dims); break;         \
-        }                                                           \
-        const dim4 strides = arr.strides();                         \
-        PREFIX##_plan plan = PREFIX##_plan_many_dft  (              \
-                                            rank,                   \
-                                            rank_dims,              \
-                                            (int)dims[rank],        \
-                                            (CAST_T*)arr.get(),     \
-                                            NULL, (int)strides[0],  \
-                                            (int)strides[rank],     \
-                                            (CAST_T*)arr.get(),     \
-                                            NULL, (int)strides[0],  \
-                                            (int)strides[rank],     \
-                                            DIRECTION,              \
-                                            FFTW_ESTIMATE);         \
-        PREFIX##_execute(plan);                                     \
-        PREFIX##_destroy_plan(plan);                                \
-    }
-
-template<typename T>
-void fftw_common(Array<T> &arr, int rank)
+template<typename T, int rank, bool direction>
+void fft_inplace(Array<T> &in)
 {
-    CPU_NOT_SUPPORTED();
+    in.eval();
+    getQueue().enqueue(kernel::fft_inplace<T, rank, direction>, in, in.getDataDims());
 }
 
-template<typename T>
-void ifftw_common(Array<T> &arr, int rank)
+template<typename Tc, typename Tr, int rank>
+Array<Tc> fft_r2c(const Array<Tr> &in)
 {
-    CPU_NOT_SUPPORTED();
+    in.eval();
+
+    dim4 odims = in.dims();
+    odims[0] = odims[0] / 2 + 1;
+    Array<Tc> out = createEmptyArray<Tc>(odims);
+
+    getQueue().enqueue(kernel::fft_r2c<Tc, Tr, rank>, out, out.getDataDims(), in, in.getDataDims());
+
+    return out;
 }
 
-TRANSFORM( fft,  cfloat, fftwf_complex, fftwf,  FFTW_FORWARD);
-TRANSFORM( fft, cdouble, fftw_complex , fftw ,  FFTW_FORWARD);
-TRANSFORM(ifft,  cfloat, fftwf_complex, fftwf, FFTW_BACKWARD);
-TRANSFORM(ifft, cdouble, fftw_complex , fftw , FFTW_BACKWARD);
-
-template<int rank>
-void computePaddedDims(dim4 &pdims, dim_type const * const pad)
+template<typename Tr, typename Tc, int rank>
+Array<Tr> fft_c2r(const Array<Tc> &in, const dim4 &odims)
 {
-    if (rank==1) {
-        pdims[0] = pad[0];
-    } else if (rank==2) {
-        pdims[0] = pad[0];
-        pdims[1] = pad[1];
-    } else if (rank==3) {
-        pdims[0] = pad[0];
-        pdims[1] = pad[1];
-        pdims[2] = pad[2];
-    }
+    in.eval();
+
+    Array<Tr> out = createEmptyArray<Tr>(odims);
+    getQueue().enqueue(kernel::fft_c2r<Tr, Tc, rank>,
+                       out, out.getDataDims(),
+                       in, in.getDataDims(),
+                       odims);
+
+    return out;
 }
 
-template<typename inType, typename outType, int rank, bool isR2C>
-Array<outType> fft(Array<inType> const &in, double norm_factor, dim_type const npad, dim_type const * const pad)
-{
-    ARG_ASSERT(1, ((in.isOwner()==true) && "fft: Sub-Arrays not supported yet."));
+#define INSTANTIATE(T)                                      \
+    template void fft_inplace<T, 1, true >(Array<T> &in);   \
+    template void fft_inplace<T, 2, true >(Array<T> &in);   \
+    template void fft_inplace<T, 3, true >(Array<T> &in);   \
+    template void fft_inplace<T, 1, false>(Array<T> &in);   \
+    template void fft_inplace<T, 2, false>(Array<T> &in);   \
+    template void fft_inplace<T, 3, false>(Array<T> &in);
 
-    dim4 pdims(1);
+INSTANTIATE(cfloat )
+INSTANTIATE(cdouble)
 
-    switch(rank) {
-        case 1 : computePaddedDims<1>(pdims, pad); break;
-        case 2 : computePaddedDims<2>(pdims, pad); break;
-        case 3 : computePaddedDims<3>(pdims, pad); break;
-        default: AF_ERROR("invalid rank", AF_ERR_SIZE);
-    }
+#define INSTANTIATE_REAL(Tr, Tc)                                        \
+    template Array<Tc> fft_r2c<Tc, Tr, 1>(const Array<Tr> &in);         \
+    template Array<Tc> fft_r2c<Tc, Tr, 2>(const Array<Tr> &in);         \
+    template Array<Tc> fft_r2c<Tc, Tr, 3>(const Array<Tr> &in);         \
+    template Array<Tr> fft_c2r<Tr, Tc, 1>(const Array<Tc> &in, const dim4 &odims); \
+    template Array<Tr> fft_c2r<Tr, Tc, 2>(const Array<Tc> &in, const dim4 &odims); \
+    template Array<Tr> fft_c2r<Tr, Tc, 3>(const Array<Tc> &in, const dim4 &odims); \
 
-    pdims[rank] = in.dims()[rank];
-
-    Array<outType> ret = padArray<inType, outType>(in, (npad>0 ? pdims : in.dims()));
-
-    fftw_common<outType>(ret, rank);
-
-    return ret;
-}
-
-template<typename T, int rank>
-Array<T> ifft(Array<T> const &in, double norm_factor, dim_type const npad, dim_type const * const pad)
-{
-    ARG_ASSERT(1, ((in.isOwner()==true) && "ifft: Sub-Arrays not supported yet."));
-
-    dim4 pdims(1);
-
-    switch(rank) {
-        case 1 : computePaddedDims<1>(pdims, pad); break;
-        case 2 : computePaddedDims<2>(pdims, pad); break;
-        case 3 : computePaddedDims<3>(pdims, pad); break;
-        default: AF_ERROR("invalid rank", AF_ERR_SIZE);
-    }
-
-    pdims[rank] = in.dims()[rank];
-
-    Array<T> ret = padArray<T, T>(in, (npad>0 ? pdims : in.dims()), scalar<T>(0), norm_factor);
-
-    ifftw_common<T>(ret, rank);
-
-    return ret;
-}
-
-#define INSTANTIATE1(T1, T2)\
-    template Array<T2> fft <T1, T2, 1, true >(const Array<T1> &in, double normalize, dim_type const npad, dim_type const * const pad); \
-    template Array<T2> fft <T1, T2, 2, true >(const Array<T1> &in, double normalize, dim_type const npad, dim_type const * const pad); \
-    template Array<T2> fft <T1, T2, 3, true >(const Array<T1> &in, double normalize, dim_type const npad, dim_type const * const pad);
-
-INSTANTIATE1(float  , cfloat )
-INSTANTIATE1(double , cdouble)
-
-#define INSTANTIATE2(T)\
-    template Array<T> fft <T, T, 1, false>(const Array<T> &in, double normalize, dim_type const npad, dim_type const * const pad); \
-    template Array<T> fft <T, T, 2, false>(const Array<T> &in, double normalize, dim_type const npad, dim_type const * const pad); \
-    template Array<T> fft <T, T, 3, false>(const Array<T> &in, double normalize, dim_type const npad, dim_type const * const pad); \
-    template Array<T> ifft<T, 1>(const Array<T> &in, double normalize, dim_type const npad, dim_type const * const pad); \
-    template Array<T> ifft<T, 2>(const Array<T> &in, double normalize, dim_type const npad, dim_type const * const pad); \
-    template Array<T> ifft<T, 3>(const Array<T> &in, double normalize, dim_type const npad, dim_type const * const pad);
-
-INSTANTIATE2(cfloat )
-INSTANTIATE2(cdouble)
+INSTANTIATE_REAL(float , cfloat )
+INSTANTIATE_REAL(double, cdouble)
 
 }

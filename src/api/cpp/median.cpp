@@ -8,6 +8,7 @@
  ********************************************************/
 
 #include <af/statistics.h>
+#include <af/array.h>
 #include "error.hpp"
 #include "common.hpp"
 
@@ -28,10 +29,14 @@ INSTANTIATE_MEDIAN(int);
 INSTANTIATE_MEDIAN(unsigned int);
 INSTANTIATE_MEDIAN(char);
 INSTANTIATE_MEDIAN(unsigned char);
+INSTANTIATE_MEDIAN(long long);
+INSTANTIATE_MEDIAN(unsigned long long);
+INSTANTIATE_MEDIAN(short);
+INSTANTIATE_MEDIAN(unsigned short);
 
 #undef INSTANTIATE_MEDIAN
 
-AFAPI array median(const array& in, dim_type dim)
+array median(const array& in, const dim_t dim)
 {
     af_array temp = 0;
     AF_THROW(af_median(&temp, in.get(), getFNSD(dim, in.dims())));
@@ -39,4 +44,3 @@ AFAPI array median(const array& in, dim_type dim)
 }
 
 }
-

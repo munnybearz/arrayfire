@@ -7,9 +7,8 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <af/defines.h>
 #include <backend.hpp>
-#include <dispatch.hpp>
+#include <common/dispatch.hpp>
 #include <debug_cuda.hpp>
 #include "shared.hpp"
 
@@ -20,72 +19,78 @@ namespace kernel
 {
 
 static const unsigned MAX_BINS  = 4000;
-static const dim_type THREADS_X =  256;
-static const dim_type THRD_LOAD =   16;
+static const int THREADS_X =  256;
+static const int THRD_LOAD =   16;
 
-__forceinline__ __device__ dim_type minimum(dim_type a, dim_type b)
+__forceinline__ __device__ int minimum(int a, int b)
 {
   return (a < b ? a : b);
 }
 
-template<typename inType, typename outType>
+template<typename inType, typename outType, bool isLinear>
 static __global__
 void histogramKernel(Param<outType> out, CParam<inType> in,
-                     const cfloat *d_minmax, dim_type len,
-                     dim_type nbins, dim_type blk_x)
+                     int len, int nbins, float minval, float maxval, int nBBS)
 {
     SharedMemory<outType> shared;
     outType * shrdMem = shared.getPointer();
 
-    // offset minmax array to account for batch ops
-    d_minmax += blockIdx.y;
-
     // offset input and output to account for batch ops
-    const inType *iptr  =  in.ptr + blockIdx.y *  in.strides[2];
-    outType      *optr  = out.ptr + blockIdx.y * out.strides[2];
+    unsigned b2 = blockIdx.x / nBBS;
+    const inType *iptr  =  in.ptr + b2 *  in.strides[2] + blockIdx.y *  in.strides[3];
+    outType      *optr  = out.ptr + b2 * out.strides[2] + blockIdx.y * out.strides[3];
 
-    int start = blockIdx.x * THRD_LOAD * blockDim.x + threadIdx.x;
-    int end   = minimum((start + THRD_LOAD * blockDim.x), len);
+    int start  = (blockIdx.x-b2*nBBS) * THRD_LOAD * blockDim.x + threadIdx.x;
+    int end    = minimum((start + THRD_LOAD * blockDim.x), len);
+    float step = (maxval-minval) / (float)nbins;
 
-    __shared__ float min;
-    __shared__ float step;
+    // If nbins > max shared memory allocated, then just use atomicAdd on global memory
+    bool use_global = nbins > MAX_BINS;
 
-    if (threadIdx.x == 0) {
-        float2 minmax = *d_minmax;
-        min  = minmax.x;
-        step = (minmax.y-minmax.x) / (float)nbins;
+    // Skip initializing shared memory
+    if (!use_global) {
+        for (int i = threadIdx.x; i < nbins; i += blockDim.x)
+            shrdMem[i] = 0;
+        __syncthreads();
     }
-
-    for (int i = threadIdx.x; i < nbins; i += blockDim.x)
-        shrdMem[i] = 0;
-    __syncthreads();
 
     for (int row = start; row < end; row += blockDim.x) {
-        int bin = (int)((iptr[row] - min) / step);
+        int idx = isLinear ? row : ((row % in.dims[0]) + (row / in.dims[0])*in.strides[1]);
+        int bin = (int)((iptr[idx] - minval) / step);
         bin     = (bin < 0)      ? 0         : bin;
         bin     = (bin >= nbins) ? (nbins-1) : bin;
-        atomicAdd((shrdMem + bin), 1);
-    }
-    __syncthreads();
 
-    for (int i = threadIdx.x; i < nbins; i += blockDim.x) {
-        atomicAdd((optr + i), shrdMem[i]);
+        if (use_global) {
+            atomicAdd((optr + bin), 1);
+        } else {
+            atomicAdd((shrdMem + bin), 1);
+        }
+    }
+
+    // No need to write to global if use_global is true
+    if (!use_global) {
+        __syncthreads();
+        for (int i = threadIdx.x; i < nbins; i += blockDim.x) {
+            atomicAdd((optr + i), shrdMem[i]);
+        }
     }
 }
 
-template<typename inType, typename outType>
-void histogram(Param<outType> out, CParam<inType> in, cfloat *d_minmax, dim_type nbins)
+template<typename inType, typename outType, bool isLinear>
+void histogram(Param<outType> out, CParam<inType> in, int nbins, float minval, float maxval)
 {
     dim3 threads(kernel::THREADS_X, 1);
-    dim_type numElements= in.dims[0] * in.dims[1];
-    dim_type blk_x = divup(numElements, THRD_LOAD*THREADS_X);
-    dim_type batchCount = in.dims[2];
-    dim3 blocks(blk_x, batchCount);
-    dim_type smem_size = nbins * sizeof(outType);
 
-    histogramKernel<inType, outType>
-        <<<blocks, threads, smem_size>>>
-        (out, in, d_minmax, numElements, nbins, blk_x);
+    int nElems = in.dims[0] * in.dims[1];
+    int blk_x  = divup(nElems, THRD_LOAD*THREADS_X);
+
+    dim3 blocks(blk_x * in.dims[2], in.dims[3]);
+
+    // If nbins > MAX_BINS, we are using global memory so smem_size can be 0;
+    int smem_size = nbins <= MAX_BINS ? (nbins * sizeof(outType)) : 0;
+
+    CUDA_LAUNCH_SMEM((histogramKernel<inType, outType, isLinear>), blocks, threads, smem_size,
+            out, in, nElems, nbins, minval, maxval, blk_x);
 
     POST_LAUNCH_CHECK();
 }

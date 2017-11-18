@@ -11,14 +11,23 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <vector>
+#include <memory.hpp>
+#include <GraphicsResourceManager.hpp>
+#include <cufft.hpp>
+#include <cublas.hpp>
+#include <cusolverDn.hpp>
+#include <cusparse.hpp>
+
+#include <memory>
+#include <mutex>
 #include <string>
+#include <vector>
 
 namespace cuda
 {
+int getBackend();
 
-std::string getInfo();
-
+std::string getDeviceInfo();
 std::string getDeviceInfo(int device);
 
 std::string getPlatformInfo();
@@ -27,11 +36,13 @@ std::string getDriverVersion();
 
 std::string getCUDARuntimeVersion();
 
-std::string getInfo();
-
 bool isDoubleSupported(int device);
 
 void devprop(char* d_name, char* d_platform, char *d_toolkit, char* d_compute);
+
+unsigned getMaxJitSize();
+
+std::recursive_mutex& getDriverApiMutex(int device);
 
 int getDeviceCount();
 
@@ -39,9 +50,20 @@ int getActiveDeviceId();
 
 int getDeviceNativeId(int device);
 
+cudaStream_t getStream(int device);
+
+cudaStream_t getActiveStream();
+
+size_t getDeviceMemorySize(int device);
+
+size_t getHostMemorySize();
+
 int setDevice(int device);
 
 void sync(int device);
+
+// Returns true if the AF_SYNCHRONIZE_CALLS environment variable is set to 1
+bool synchronize_calls();
 
 cudaDeviceProp getDeviceProp(int device);
 
@@ -51,12 +73,48 @@ struct cudaDevice_t {
     int nativeId;
 };
 
+bool& evalFlag();
+
+///////////////////////// BEGIN Sub-Managers ///////////////////
+//
+MemoryManager& memoryManager();
+
+MemoryManagerPinned& pinnedMemoryManager();
+
+#if defined(WITH_GRAPHICS)
+GraphicsResourceManager& interopManager();
+#endif
+
+PlanCache& fftManager();
+
+BlasHandle blasHandle();
+
+SolveHandle solverDnHandle();
+
+SparseHandle sparseHandle();
+//
+///////////////////////// END Sub-Managers /////////////////////
+
 class DeviceManager
 {
     public:
         static const unsigned MAX_DEVICES = 16;
 
+#if defined(WITH_GRAPHICS)
+        static bool checkGraphicsInteropCapability();
+#endif
+
         static DeviceManager& getInstance();
+
+        friend MemoryManager& memoryManager();
+
+        friend MemoryManagerPinned& pinnedMemoryManager();
+
+#if defined(WITH_GRAPHICS)
+        friend GraphicsResourceManager& interopManager();
+#endif
+
+        friend std::recursive_mutex& getDriverApiMutex(int device);
 
         friend std::string getDeviceInfo(int device);
 
@@ -66,13 +124,15 @@ class DeviceManager
 
         friend std::string getCUDARuntimeVersion();
 
-        friend std::string getInfo();
+        friend std::string getDeviceInfo();
 
         friend int getDeviceCount();
 
-        friend int getActiveDeviceId();
-
         friend int getDeviceNativeId(int device);
+
+        friend int getDeviceIdFromNativeId(int nativeId);
+
+        friend cudaStream_t getStream(int device);
 
         friend int setDevice(int device);
 
@@ -88,6 +148,8 @@ class DeviceManager
         DeviceManager(DeviceManager const&);
         void operator=(DeviceManager const&);
 
+        std::recursive_mutex driver_api_mutex[MAX_DEVICES];
+
         // Attributes
         std::vector<cudaDevice_t> cuDevices;
 
@@ -97,8 +159,14 @@ class DeviceManager
 
         int setActiveDevice(int device, int native = -1);
 
-        int activeDev;
         int nDevices;
-};
+        cudaStream_t streams[MAX_DEVICES];
 
+        std::unique_ptr<MemoryManager> memManager;
+
+        std::unique_ptr<MemoryManagerPinned> pinnedMemManager;
+#if defined(WITH_GRAPHICS)
+        std::unique_ptr<GraphicsResourceManager> gfxManagers[MAX_DEVICES];
+#endif
+};
 }

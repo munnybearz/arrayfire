@@ -39,7 +39,7 @@ class Join : public ::testing::Test
 };
 
 // create a list of types to be tested
-typedef ::testing::Types<float, double, cfloat, cdouble, int, unsigned int, char, unsigned char> TestTypes;
+typedef ::testing::Types<float, double, cfloat, cdouble, int, unsigned int, intl, uintl, char, unsigned char, short, ushort> TestTypes;
 
 // register the type list
 TYPED_TEST_CASE(Join, TestTypes);
@@ -94,10 +94,10 @@ void joinTest(string pTestFile, const unsigned dim, const unsigned in0, const un
     // Delete
     delete[] outData;
 
-    if(in0Array  != 0) af_destroy_array(in0Array);
-    if(in1Array  != 0) af_destroy_array(in1Array);
-    if(outArray  != 0) af_destroy_array(outArray);
-    if(tempArray != 0) af_destroy_array(tempArray);
+    if(in0Array  != 0) af_release_array(in0Array);
+    if(in1Array  != 0) af_release_array(in1Array);
+    if(outArray  != 0) af_release_array(outArray);
+    if(tempArray != 0) af_release_array(tempArray);
 }
 
 #define JOIN_INIT(desc, file, dim, in0, in1, resultIdx)                                     \
@@ -113,6 +113,31 @@ void joinTest(string pTestFile, const unsigned dim, const unsigned in0, const un
     JOIN_INIT(JoinSmall0, join_small, 0, 0, 1, 0);
     JOIN_INIT(JoinSmall1, join_small, 1, 0, 2, 1);
     JOIN_INIT(JoinSmall2, join_small, 2, 0, 3, 2);
+
+TEST(Join, JoinLargeDim)
+{
+    //const int nx = 32;
+    const int nx = 1;
+    const int ny = 4 * 1024 * 1024;
+    const int nw = 4 * 1024 * 1024;
+
+    af::deviceGC();
+    {
+        af::array in = af::randu(nx, ny, u8);
+        af::array joined = af::join(0, in, in);
+        af::dim4 in_dims = in.dims();
+        af::dim4 joined_dims = joined.dims();
+
+        ASSERT_EQ(2*in_dims[0], joined_dims[0]);
+        ASSERT_EQ(0.f, af::sum<float>((joined(0, af::span) - joined(1, af::span)).as(f32)));
+
+        af::array in2 = af::constant(1, (dim_t)nx, (dim_t)ny, (dim_t)2, (dim_t)nw, u8);
+        joined = af::join(3, in, in);
+        in_dims = in.dims();
+        joined_dims = joined.dims();
+        ASSERT_EQ(2*in_dims[3], joined_dims[3]);
+    }
+}
 
 ///////////////////////////////// CPP ////////////////////////////////////
 //
@@ -148,4 +173,33 @@ TEST(Join, CPP)
 
     // Delete
     delete[] outData;
+}
+
+TEST(JoinMany0, CPP)
+{
+    if (noDoubleTests<float>()) return;
+
+    af::array a0 = af::randu(10, 5);
+    af::array a1 = af::randu(20, 5);
+    af::array a2 = af::randu(5, 5);
+
+    af::array output = af::join(0, a0, a1, a2);
+    af::array gold = af::join(0, a0, af::join(0, a1, a2));
+
+    ASSERT_EQ(af::sum<float>(output - gold), 0);
+}
+
+TEST(JoinMany1, CPP)
+{
+    if (noDoubleTests<float>()) return;
+
+    af::array a0 = af::randu(20, 200);
+    af::array a1 = af::randu(20, 400);
+    af::array a2 = af::randu(20, 10);
+    af::array a3 = af::randu(20, 100);
+
+    int dim = 1;
+    af::array output = af::join(dim, a0, a1, a2, a3);
+    af::array gold = af::join(dim, a0, af::join(dim, a1, af::join(dim, a2, a3)));
+    ASSERT_EQ(af::sum<float>(output - gold), 0);
 }

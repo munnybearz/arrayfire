@@ -7,12 +7,13 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <af/defines.h>
 #include <backend.hpp>
-#include <dispatch.hpp>
+#include <common/dispatch.hpp>
 #include <backend.hpp>
 #include <Param.hpp>
 #include <debug_cuda.hpp>
+
+#include <algorithm>
 
 namespace cuda
 {
@@ -21,7 +22,7 @@ namespace kernel
 
     typedef struct
     {
-        dim_type dim[4];
+        int dim[4];
     } dims_t;
 
     static const uint DIMX = 32;
@@ -37,30 +38,29 @@ namespace kernel
         const int tidy = threadIdx.y;
 
         const int zid = blockIdx.x / blocks_x;
-        const int wid = blockIdx.y / blocks_y;
         const int blockIdx_x = blockIdx.x - (blocks_x) * zid;
-        const int blockIdx_y = blockIdx.y - (blocks_y) * wid;
         const int xid = blockIdx_x * blockDim.x + tidx;
+
+        const int wid = (blockIdx.y + blockIdx.z * gridDim.y) / blocks_y;
+        const int blockIdx_y = (blockIdx.y + blockIdx.z * gridDim.y) - (blocks_y) * wid;
         const int yid = blockIdx_y * blockDim.y + tidy;
-
         // FIXME: Do more work per block
-        out += wid * ostrides.dim[3] + zid * ostrides.dim[2] + yid * ostrides.dim[1];
-        in  += wid * istrides.dim[3] + zid * istrides.dim[2] + yid * istrides.dim[1];
+        T * const optr = out + wid * ostrides.dim[3] + zid * ostrides.dim[2] + yid * ostrides.dim[1];
+        const T * iptr = in + wid * istrides.dim[3] + zid * istrides.dim[2] + yid * istrides.dim[1];
 
-        dim_type istride0 = istrides.dim[0];
+        int istride0 = istrides.dim[0];
         if (xid < idims.dim[0] &&
             yid < idims.dim[1] &&
             zid < idims.dim[2] &&
             wid < idims.dim[3]) {
-            out[xid] = in[xid * istride0];
+            optr[xid] = iptr[xid * istride0];
         }
-
     }
 
     template<typename T>
-    void memcopy(T *out, const dim_type *ostrides,
-                 const T *in, const dim_type *idims,
-                 const dim_type *istrides, uint ndims)
+    void memcopy(T *out, const dim_t *ostrides,
+                 const T *in, const dim_t *idims,
+                 const dim_t *istrides, uint ndims)
     {
         dim3 threads(DIMX, DIMY);
 
@@ -76,13 +76,16 @@ namespace kernel
         dim3 blocks(blocks_x * idims[2],
                     blocks_y * idims[3]);
 
-        dims_t _ostrides = {{ostrides[0], ostrides[1], ostrides[2], ostrides[3]}};
-        dims_t _istrides = {{istrides[0], istrides[1], istrides[2], istrides[3]}};
-        dims_t _idims = {{idims[0], idims[1], idims[2], idims[3]}};
+        dims_t _ostrides = {{(int)ostrides[0], (int)ostrides[1], (int)ostrides[2], (int)ostrides[3]}};
+        dims_t _istrides = {{(int)istrides[0], (int)istrides[1], (int)istrides[2], (int)istrides[3]}};
+        dims_t _idims = {{(int)idims[0], (int)idims[1], (int)idims[2], (int)idims[3]}};
 
-        (memcopy_kernel<T>)<<<blocks, threads>>>(out, _ostrides,
-                                                 in, _idims, _istrides,
-                                                 blocks_x, blocks_y);
+        const int maxBlocksY = cuda::getDeviceProp(cuda::getActiveDeviceId()).maxGridSize[1];
+        blocks.z = divup(blocks.y, maxBlocksY);
+        blocks.y = divup(blocks.y, blocks.z);
+
+        CUDA_LAUNCH((memcopy_kernel<T>), blocks, threads,
+            out, _ostrides, in, _idims, _istrides, blocks_x, blocks_y);
         POST_LAUNCH_CHECK();
     }
 
@@ -141,6 +144,10 @@ namespace kernel
     OTHER_SPECIALIZATIONS(double)
     OTHER_SPECIALIZATIONS(int   )
     OTHER_SPECIALIZATIONS(uint  )
+    OTHER_SPECIALIZATIONS(intl   )
+    OTHER_SPECIALIZATIONS(uintl  )
+    OTHER_SPECIALIZATIONS(short  )
+    OTHER_SPECIALIZATIONS(ushort )
     OTHER_SPECIALIZATIONS(uchar )
     OTHER_SPECIALIZATIONS(char  )
     ////////////////////////////// END - templated help functions for copy_kernel //////////////////////////////////
@@ -155,22 +162,22 @@ namespace kernel
         const uint ly = threadIdx.y;
 
         const uint gz = blockIdx.x / blk_x;
-        const uint gw = blockIdx.y / blk_y;
+        const uint gw = (blockIdx.y + (blockIdx.z * gridDim.y)) / blk_y;
         const uint blockIdx_x = blockIdx.x - (blk_x) * gz;
-        const uint blockIdx_y = blockIdx.y - (blk_y) * gw;
+        const uint blockIdx_y = (blockIdx.y + (blockIdx.z * gridDim.y)) - (blk_y) * gw;
         const uint gx = blockIdx_x * blockDim.x + lx;
         const uint gy = blockIdx_y * blockDim.y + ly;
 
         const inType * in = src.ptr + (gw * src.strides[3] + gz * src.strides[2] + gy * src.strides[1]);
         outType * out     = dst.ptr + (gw * dst.strides[3] + gz * dst.strides[2] + gy * dst.strides[1]);
 
-        dim_type istride0 = src.strides[0];
-        dim_type ostride0 = dst.strides[0];
+        int istride0 = src.strides[0];
+        int ostride0 = dst.strides[0];
 
         if (gy < dst.dims[1] && gz < dst.dims[2] && gw < dst.dims[3]) {
-            dim_type loop_offset = blockDim.x*gridDim.x;
+            int loop_offset = blockDim.x * blk_x;
             bool cond = gy < trgt.dim[1] && gz < trgt.dim[2] && gw < trgt.dim[3];
-            for(dim_type rep=gx; rep<dst.dims[0]; rep+=loop_offset) {
+            for(int rep=gx; rep<dst.dims[0]; rep+=loop_offset) {
                 outType temp = default_value;
                 if (same_dims || (rep < trgt.dim[0] && cond)) {
                     temp = convertType<inType, outType>(scale<inType>(in[rep * istride0], factor));
@@ -181,11 +188,12 @@ namespace kernel
     }
 
     template<typename inType, typename outType>
-    void copy(Param<outType> dst, CParam<inType> src, dim_type ndims, outType default_value, double factor)
+    void copy(Param<outType> dst, CParam<inType> src, int ndims, outType default_value, double factor)
     {
         dim3 threads(DIMX, DIMY);
         size_t local_size[] = {DIMX, DIMY};
 
+        //FIXME: Why isn't threads being updated??
         local_size[0] *= local_size[1];
         if (ndims == 1) {
             local_size[1] = 1;
@@ -197,10 +205,14 @@ namespace kernel
         dim3 blocks(blk_x * dst.dims[2],
                     blk_y * dst.dims[3]);
 
-        dim_type trgt_l  = std::min(dst.dims[3], src.dims[3]);
-        dim_type trgt_k  = std::min(dst.dims[2], src.dims[2]);
-        dim_type trgt_j  = std::min(dst.dims[1], src.dims[1]);
-        dim_type trgt_i  = std::min(dst.dims[0], src.dims[0]);
+        const int maxBlocksY = cuda::getDeviceProp(cuda::getActiveDeviceId()).maxGridSize[1];
+        blocks.z = divup(blocks.y, maxBlocksY);
+        blocks.y = divup(blocks.y, blocks.z);
+
+        int trgt_l  = std::min(dst.dims[3], src.dims[3]);
+        int trgt_k  = std::min(dst.dims[2], src.dims[2]);
+        int trgt_j  = std::min(dst.dims[1], src.dims[1]);
+        int trgt_i  = std::min(dst.dims[0], src.dims[0]);
         dims_t trgt_dims = {{trgt_i, trgt_j, trgt_k, trgt_l}};
 
         bool same_dims = ( (src.dims[0]==dst.dims[0]) &&
@@ -209,9 +221,11 @@ namespace kernel
                            (src.dims[3]==dst.dims[3]) );
 
         if (same_dims)
-            (copy_kernel<inType, outType, true >)<<<blocks, threads>>>(dst, src, default_value, factor, trgt_dims, blk_x, blk_y);
+            CUDA_LAUNCH((copy_kernel<inType, outType, true >), blocks, threads,
+                    dst, src, default_value, factor, trgt_dims, blk_x, blk_y);
         else
-            (copy_kernel<inType, outType, false>)<<<blocks, threads>>>(dst, src, default_value, factor, trgt_dims, blk_x, blk_y);
+            CUDA_LAUNCH((copy_kernel<inType, outType, false>), blocks, threads,
+                    dst, src, default_value, factor, trgt_dims, blk_x, blk_y);
 
         POST_LAUNCH_CHECK();
     }

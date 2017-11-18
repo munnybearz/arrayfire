@@ -25,6 +25,12 @@ using af::cfloat;
 using af::cdouble;
 
 template<typename T>
+class Where : public ::testing::Test { };
+
+typedef ::testing::Types< float, double, cfloat, cdouble, int, uint, intl, uintl, char, uchar, short, ushort> TestTypes;
+TYPED_TEST_CASE(Where, TestTypes);
+
+template<typename T>
 void whereTest(string pTestFile, bool isSubRef=false, const vector<af_seq> seqv=vector<af_seq>())
 {
     if (noDoubleTests<T>()) return;
@@ -67,21 +73,10 @@ void whereTest(string pTestFile, bool isSubRef=false, const vector<af_seq> seqv=
                                                         << std::endl;
     }
 
-    if(inArray   != 0) af_destroy_array(inArray);
-    if(outArray  != 0) af_destroy_array(outArray);
-    if(tempArray != 0) af_destroy_array(tempArray);
+    if(inArray   != 0) af_release_array(inArray);
+    if(outArray  != 0) af_release_array(outArray);
+    if(tempArray != 0) af_release_array(tempArray);
 }
-
-vector<af_seq> init_subs()
-{
-    vector<af_seq> subs;
-    subs.push_back(af_make_seq(2, 6, 1));
-    subs.push_back(af_make_seq(1, 5, 1));
-    subs.push_back(af_make_seq(1, 3, 1));
-    subs.push_back(af_make_seq(1, 2, 1));
-    return subs;
-}
-
 
 #define WHERE_TESTS(T)                          \
     TEST(Where,Test_##T)                        \
@@ -91,20 +86,16 @@ vector<af_seq> init_subs()
             );                                  \
     }                                           \
 
-WHERE_TESTS(float)
-WHERE_TESTS(double)
-WHERE_TESTS(cfloat)
-WHERE_TESTS(cdouble)
-WHERE_TESTS(int)
-WHERE_TESTS(uint)
-WHERE_TESTS(char)
-WHERE_TESTS(uchar)
+TYPED_TEST(Where, BasicC)
+{
+    whereTest<TypeParam>(string(TEST_DIR"/where/where.test") );
+}
 
 //////////////////////////////////// CPP /////////////////////////////////
 //
-TEST(Where, CPP)
+TYPED_TEST(Where, CPP)
 {
-    if (noDoubleTests<int>()) return;
+    if (noDoubleTests<TypeParam>()) return;
 
     vector<af::dim4> numDims;
 
@@ -114,7 +105,7 @@ TEST(Where, CPP)
     af::dim4 dims       = numDims[0];
 
     vector<float> in(data[0].begin(), data[0].end());
-    af::array input(dims, &(in.front()));
+    af::array input(dims, &in.front(), afHost);
     af::array output = where(input);
 
     // Compare result
@@ -129,4 +120,25 @@ TEST(Where, CPP)
         ASSERT_EQ(currGoldBar[elIter], outData[elIter]) << "at: " << elIter
                                                         << std::endl;
     }
+}
+
+TEST(Where, MaxDim)
+{
+    const size_t largeDim = 65535 * 32 + 2;
+
+    af::array input = af::range(af::dim4(1, largeDim), 1);
+    af::array output = where(input % 2 == 0);
+    af::array gold = 2 * af::range(largeDim/2);
+    ASSERT_TRUE(af::allTrue<bool>(output == gold));
+
+    input = af::range(af::dim4(1, 1, 1, largeDim), 3);
+    output = where(input % 2 == 0);
+    ASSERT_TRUE(af::allTrue<bool>(output == gold));
+}
+
+TEST(Where, ISSUE_1259)
+{
+    af::array a = af::randu(10, 10, 10);
+    af::array indices = af::where(a > 2);
+    ASSERT_EQ(indices.elements(), 0);
 }

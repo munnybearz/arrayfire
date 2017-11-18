@@ -8,7 +8,6 @@
  ********************************************************/
 
 #pragma once
-#include <af/array.h>
 #include <optypes.hpp>
 #include <vector>
 #include "Node.hpp"
@@ -20,29 +19,13 @@ namespace TNJ
 {
 
     template<typename T>
-    class ScalarNode : public Node
+    class ScalarNode : public TNode<T>
     {
 
-    protected:
-        T m_val;
-
     public:
-        ScalarNode(T val) : Node(), m_val(val) {}
-
-        void *calc(int x, int y, int z, int w)
+        ScalarNode(T val) : TNode<T>(val, 0, {})
         {
-            return (void *)(&m_val);
         }
-
-        void getInfo(unsigned &len, unsigned &buf_count, unsigned &bytes)
-        {
-            if (m_is_eval) return;
-            len++;
-            m_is_eval = true;
-            return;
-        }
-
-        void reset() { m_is_eval = false; }
     };
 }
 

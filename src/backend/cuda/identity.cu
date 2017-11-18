@@ -7,9 +7,7 @@
  * http://arrayfire.com/licenses/BSD-3-Clause
  ********************************************************/
 
-#include <af/array.h>
 #include <af/dim4.hpp>
-#include <af/defines.h>
 #include <Array.hpp>
 #include <identity.hpp>
 #include <debug_cuda.hpp>
@@ -34,7 +32,11 @@ namespace cuda
     INSTANTIATE_IDENTITY(cdouble)
     INSTANTIATE_IDENTITY(int)
     INSTANTIATE_IDENTITY(uint)
+    INSTANTIATE_IDENTITY(intl)
+    INSTANTIATE_IDENTITY(uintl)
     INSTANTIATE_IDENTITY(char)
     INSTANTIATE_IDENTITY(uchar)
+    INSTANTIATE_IDENTITY(short)
+    INSTANTIATE_IDENTITY(ushort)
 
 }

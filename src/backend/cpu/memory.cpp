@@ -10,148 +10,179 @@
 #include <memory.hpp>
 #include <err_cpu.hpp>
 #include <types.hpp>
-#include <map>
-#include <dispatch.hpp>
-#include <cstdlib>
+#include <platform.hpp>
+#include <queue.hpp>
+
+#ifndef AF_MEM_DEBUG
+#define AF_MEM_DEBUG 0
+#endif
+
+#ifndef AF_CPU_MEM_DEBUG
+#define AF_CPU_MEM_DEBUG 0
+#endif
+
+using std::unique_ptr;
+using std::function;
 
 namespace cpu
 {
-    void garbageCollect();
+void setMemStepSize(size_t step_bytes)
+{
+    memoryManager().setMemStepSize(step_bytes);
+}
 
-    class Manager
-    {
-        public:
-        static bool initialized;
-        Manager()
-        {
-            initialized = true;
-        }
+size_t getMemStepSize(void)
+{
+    return memoryManager().getMemStepSize();
+}
 
-        ~Manager()
-        {
+size_t getMaxBytes()
+{
+    return memoryManager().getMaxBytes();
+}
+
+unsigned getMaxBuffers()
+{
+    return memoryManager().getMaxBuffers();
+}
+
+void garbageCollect()
+{
+    memoryManager().garbageCollect();
+}
+
+void printMemInfo(const char *msg, const int device)
+{
+    memoryManager().printInfo(msg, device);
+}
+
+template<typename T>
+unique_ptr<T[], function<void(T *)>>
+memAlloc(const size_t &elements)
+{
+    T *ptr = nullptr;
+
+    ptr = (T *)memoryManager().alloc(elements * sizeof(T), false);
+    return unique_ptr<T[], function<void(T *)>>(ptr, memFree<T>);
+}
+
+void* memAllocUser(const size_t &bytes)
+{
+    void *ptr = nullptr;
+    ptr = memoryManager().alloc(bytes, true);
+    return ptr;
+}
+
+template<typename T>
+void memFree(T *ptr)
+{
+    return memoryManager().unlock((void *)ptr, false);
+}
+
+void memFreeUser(void *ptr)
+{
+    memoryManager().unlock((void *)ptr, true);
+}
+
+void memLock(const void *ptr)
+{
+    memoryManager().userLock((void *)ptr);
+}
+
+bool isLocked(const void *ptr)
+{
+    return memoryManager().isUserLocked((void *)ptr);
+}
+
+void memUnlock(const void *ptr)
+{
+    memoryManager().userUnlock((void *)ptr);
+}
+
+void deviceMemoryInfo(size_t *alloc_bytes, size_t *alloc_buffers,
+                      size_t *lock_bytes,  size_t *lock_buffers)
+{
+    memoryManager().bufferInfo(alloc_bytes, alloc_buffers,
+                                  lock_bytes,  lock_buffers);
+}
+
+template<typename T>
+T* pinnedAlloc(const size_t &elements)
+{
+    return (T *)memoryManager().alloc(elements * sizeof(T), false);
+}
+
+template<typename T>
+void pinnedFree(T* ptr)
+{
+    return memoryManager().unlock((void *)ptr, false);
+}
+
+bool checkMemoryLimit()
+{
+    return memoryManager().checkMemoryLimit();
+}
+
+#define INSTANTIATE(T)                                                                        \
+    template std::unique_ptr<T[], std::function<void(T *)>> memAlloc(const size_t &elements); \
+    template void memFree(T* ptr);                                                            \
+    template T* pinnedAlloc(const size_t &elements);                                          \
+    template void pinnedFree(T* ptr);                                                         \
+ 
+INSTANTIATE(float)
+INSTANTIATE(cfloat)
+INSTANTIATE(double)
+INSTANTIATE(cdouble)
+INSTANTIATE(int)
+INSTANTIATE(uint)
+INSTANTIATE(char)
+INSTANTIATE(uchar)
+INSTANTIATE(intl)
+INSTANTIATE(uintl)
+INSTANTIATE(ushort)
+INSTANTIATE(short )
+
+MemoryManager::MemoryManager()
+    : common::MemoryManager<cpu::MemoryManager>(getDeviceCount(), common::MAX_BUFFERS,
+                                                AF_MEM_DEBUG || AF_CPU_MEM_DEBUG)
+{
+    this->setMaxMemorySize();
+}
+
+MemoryManager::~MemoryManager()
+{
+    common::lock_guard_t lock(this->memory_mutex);
+    for (int n = 0; n < cpu::getDeviceCount(); n++) {
+        try {
+            cpu::setDevice(n);
             garbageCollect();
-        }
-    };
-
-    bool Manager::initialized = false;
-
-    static void managerInit()
-    {
-        if(Manager::initialized == false)
-            static Manager pm = Manager();
-    }
-
-    typedef struct
-    {
-        bool is_free;
-        size_t bytes;
-    } mem_info;
-
-    static size_t used_bytes = 0;
-    typedef std::map<void *, mem_info> mem_t;
-    typedef mem_t::iterator mem_iter;
-
-    mem_t memory_map;
-
-    template<typename T>
-    void freeWrapper(T *ptr)
-    {
-        free((void *)ptr);
-    }
-
-    void garbageCollect()
-    {
-        for(mem_iter iter = memory_map.begin(); iter != memory_map.end(); iter++) {
-            if ((iter->second).is_free) freeWrapper(iter->first);
-        }
-
-        mem_iter memory_curr = memory_map.begin();
-        mem_iter memory_end  = memory_map.end();
-
-        while(memory_curr != memory_end) {
-            if (memory_curr->second.is_free) {
-                memory_map.erase(memory_curr++);
-            } else {
-                ++memory_curr;
-            }
+        } catch(AfError err) {
+            continue; // Do not throw any errors while shutting down
         }
     }
+}
 
-    template<typename T>
-    T* memAlloc(const size_t &elements)
-    {
-        managerInit();
+int MemoryManager::getActiveDeviceId()
+{
+    return cpu::getActiveDeviceId();
+}
 
-        T* ptr = NULL;
-        size_t alloc_bytes = divup(sizeof(T) * elements, 1024) * 1024;
+size_t MemoryManager::getMaxMemorySize(int id)
+{
+    return cpu::getDeviceMemorySize(id);
+}
 
-        if (elements > 0) {
+void *MemoryManager::nativeAlloc(const size_t bytes)
+{
+    void *ptr = malloc(bytes);
+    if (!ptr) AF_ERROR("Unable to allocate memory", AF_ERR_NO_MEM);
+    return ptr;
+}
 
-            // FIXME: Add better checks for garbage collection
-            // Perhaps look at total memory available as a metric
-            if (memory_map.size() > MAX_BUFFERS || used_bytes >= MAX_BYTES) {
-                garbageCollect();
-            }
-
-            for(mem_iter iter = memory_map.begin(); iter != memory_map.end(); iter++) {
-                mem_info info = iter->second;
-                if (info.is_free && info.bytes == alloc_bytes) {
-                    iter->second.is_free = false;
-                    used_bytes += alloc_bytes;
-                    return (T *)iter->first;
-                }
-            }
-
-            // Perform garbage collection if memory can not be allocated
-            ptr = (T *)malloc(alloc_bytes);
-
-            mem_info info = {false, alloc_bytes};
-            memory_map[ptr] = info;
-
-            used_bytes += alloc_bytes;
-        }
-        return ptr;
-    }
-
-    template<typename T>
-    void memFree(T *ptr)
-    {
-        mem_iter iter = memory_map.find((void *)ptr);
-
-        if (iter != memory_map.end()) {
-            iter->second.is_free = true;
-            used_bytes -= iter->second.bytes;
-        } else {
-            freeWrapper(ptr); // Free it because we are not sure what the size is
-        }
-    }
-
-    template<typename T>
-    T* pinnedAlloc(const size_t &elements)
-    {
-        return memAlloc<T>(elements);
-    }
-
-    template<typename T>
-    void pinnedFree(T* ptr)
-    {
-        memFree<T>(ptr);
-    }
-
-#define INSTANTIATE(T)                              \
-    template T* memAlloc(const size_t &elements);   \
-    template void memFree(T* ptr);                  \
-    template T* pinnedAlloc(const size_t &elements);\
-    template void pinnedFree(T* ptr);               \
-
-    INSTANTIATE(float)
-    INSTANTIATE(cfloat)
-    INSTANTIATE(double)
-    INSTANTIATE(cdouble)
-    INSTANTIATE(int)
-    INSTANTIATE(uint)
-    INSTANTIATE(char)
-    INSTANTIATE(uchar)
-    INSTANTIATE(intl)
-    INSTANTIATE(uintl)
+void MemoryManager::nativeFree(void *ptr)
+{
+    // Make sure this pointer is not being used on the queue before freeing the memory.
+    getQueue().sync();
+    return free((void *)ptr);
+}
 }

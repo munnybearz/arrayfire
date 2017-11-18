@@ -8,10 +8,11 @@
  ********************************************************/
 
 #pragma once
-#include <af/array.h>
 #include <optypes.hpp>
 #include <vector>
 #include <math.hpp>
+#include "Node.hpp"
+#include <array>
 
 namespace cpu
 {
@@ -19,9 +20,14 @@ namespace cpu
     template<typename To, typename Ti, af_op_t op>
     struct BinOp
     {
-        To eval(Ti lhs, Ti rhs)
+        void eval(TNJ::array<To> &out,
+                  const TNJ::array<Ti> &lhs,
+                  const TNJ::array<Ti> &rhs,
+                  int lim)
         {
-            return scalar<To>(0);
+            for (int i = 0; i < lim; i++) {
+                out[i] = scalar<To>(0);
+            }
         }
     };
 
@@ -29,46 +35,29 @@ namespace TNJ
 {
 
     template<typename To, typename Ti, af_op_t op>
-    class BinaryNode  : public Node
+    class BinaryNode  : public TNode<To>
     {
 
     protected:
-        Node_ptr m_lhs;
-        Node_ptr m_rhs;
         BinOp<To, Ti, op> m_op;
-        To m_val;
+        TNode<Ti> *m_lhs, *m_rhs;
 
     public:
         BinaryNode(Node_ptr lhs, Node_ptr rhs) :
-            Node(),
-            m_lhs(lhs),
-            m_rhs(rhs),
-            m_val(0)
+            TNode<To>(0, std::max(lhs->getHeight(), rhs->getHeight()) + 1, {{lhs, rhs}}),
+            m_lhs(reinterpret_cast<TNode<Ti> *>(lhs.get())),
+            m_rhs(reinterpret_cast<TNode<Ti> *>(rhs.get()))
         {
         }
 
-        void *calc(int x, int y, int z, int w)
+        void calc(int x, int y, int z, int w, int lim)
         {
-            m_val = m_op.eval(*(Ti *)m_lhs->calc(x, y, z, w),
-                              *(Ti *)m_rhs->calc(x, y, z, w));
-            return  (void *)&m_val;
+            m_op.eval(this->m_val, m_lhs->m_val, m_rhs->m_val, lim);
         }
 
-        void getInfo(unsigned &len, unsigned &buf_count, unsigned &bytes)
+        void calc(int idx, int lim)
         {
-            if (m_is_eval) return;
-
-            m_lhs->getInfo(len, buf_count, bytes);
-            m_rhs->getInfo(len, buf_count, bytes);
-            len++;
-
-            m_is_eval = true;
-            return;
-        }
-
-        void reset()
-        {
-            m_is_eval = false;
+            m_op.eval(this->m_val, m_lhs->m_val, m_rhs->m_val, lim);
         }
     };
 

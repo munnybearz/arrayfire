@@ -7,9 +7,13 @@ Overview {#mainpage}
 
 ArrayFire is a high performance software library for parallel computing with an easy-to-use API. Its array based function set makes parallel programming more accessible.
 
-You can get ArrayFire in one of the following ways
-    * [Binary installers](http://arrayfire.com/download/) from our download page
-    * Build from source using our [github repo](https://github.com/arrayfire/arrayfire)
+## Installing ArrayFire
+
+You can install ArrayFire using either a binary installer for Windows, OSX,
+or Linux or download it from source:
+
+* [Binary installers for Windows, OSX, and Linux](\ref installing)
+* [Build from source](https://github.com/arrayfire/arrayfire)
 
 ## Easy to use
 
@@ -72,7 +76,7 @@ Each ArrayFire installation comes with:
 ArrayFire supports batched operations on N-dimensional arrays.
 Batch operations in ArrayFire are run in parallel ensuring an optimal usage of your CUDA or OpenCL device.
 
-You can get the best performance out of ArrayFire using [vectorization techniques]().
+You can get the best performance out of ArrayFire using [vectorization techniques](\ref vectorization).
 
 ArrayFire can also execute loop iterations in parallel with
 [the gfor function](\ref gfor).
@@ -88,8 +92,8 @@ Read more about how [ArrayFire JIT](http://arrayfire.com/performance-of-arrayfir
 
 ## Simple Example
 
-Here's a live example to let you see ArrayFire code. You create [arrays](\ref
-construct_mat) which reside on CUDA or OpenCL devices. Then you can use
+Here's a live example to let you see ArrayFire code. You create [arrays](\ref construct_mat)
+which reside on CUDA or OpenCL devices. Then you can use
 [ArrayFire functions](modules.htm) on those [arrays](\ref construct_mat).
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.cpp}
@@ -123,3 +127,30 @@ af_print(pi);
 
 * Engineering: technical@arrayfire.com
 * Sales: sales@arrayfire.com
+
+## Citations and Acknowledgements
+
+If you redistribute ArrayFire, please follow the terms established in <a href="https://github.com/arrayfire/arrayfire/blob/master/LICENSE">the license</a>.
+If you wish to cite ArrayFire in an academic publication, please use the
+following reference:
+
+Formatted:
+
+    Yalamanchili, P., Arshad, U., Mohammed, Z., Garigipati, P., Entschev, P.,
+    Kloppenborg, B., Malcolm, James and Melonakos, J. (2015).
+    ArrayFire - A high performance software library for parallel computing with an
+    easy-to-use API. Atlanta: AccelerEyes. Retrieved from https://github.com/arrayfire/arrayfire
+
+BibTeX:
+
+    @misc{Yalamanchili2015,
+    abstract = {ArrayFire is a high performance software library for parallel computing with an easy-to-use API. Its array based function set makes parallel programming simple. ArrayFire's multiple backends (CUDA, OpenCL and native CPU) make it platform independent and highly portable. A few lines of code in ArrayFire can replace dozens of lines of parallel computing code, saving you valuable time and lowering development costs.},
+    address = {Atlanta},
+    author = {Yalamanchili, Pavan and Arshad, Umar and Mohammed, Zakiuddin and Garigipati, Pradeep and Entschev, Peter and Kloppenborg, Brian and Malcolm, James and Melonakos, John},
+    publisher = {AccelerEyes},
+    title = {{ArrayFire - A high performance software library for parallel computing with an easy-to-use API}},
+    url = {https://github.com/arrayfire/arrayfire},
+    year = {2015}
+    }
+
+ArrayFire development is funded by ArrayFire LLC and several third parties, please see the list of <a href="https://github.com/arrayfire/arrayfire/blob/master/ACKNOWLEDGEMENTS.md">acknowledgements</a>.
